@@ -2134,22 +2134,20 @@ void NeuroMPCEditor::timerCallback()
 void NeuroMPCEditor::paint (juce::Graphics& g)
 {
     const auto& t = skinLook.theme();
-    g.setGradientFill (juce::ColourGradient::vertical (t.bgTop, 0.0f, t.bgBottom, (float) getHeight()));
-    g.fillAll();
+    const auto pixelScale = g.getInternalContext().getPhysicalPixelScaleFactor();
 
-    if (t.hairline) // 3842: machined hairline lattice
+    if (bodyCache.isNull() || bodyCacheTheme != skinLook.getThemeIndex() || ! juce::approximatelyEqual (bodyCacheScale, pixelScale))
     {
-        g.setColour (t.glow.withAlpha (0.035f));
-        for (int x = 0; x < getWidth(); x += 24) g.drawVerticalLine (x, 0.0f, (float) getHeight());
-        for (int y = 0; y < getHeight(); y += 24) g.drawHorizontalLine (y, 0.0f, (float) getWidth());
+        bodyCache = juce::Image (juce::Image::RGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * pixelScale)),
+                                 juce::jmax (1, juce::roundToInt ((float) getHeight() * pixelScale)), true);
+        juce::Graphics bodyGraphics (bodyCache);
+        bodyGraphics.addTransform (juce::AffineTransform::scale (pixelScale));
+        paintBody (bodyGraphics);
+        bodyCacheTheme = skinLook.getThemeIndex();
+        bodyCacheScale = pixelScale;
     }
 
-    if (t.metal) // GOLD: brushed grain
-    {
-        juce::Random grain (7);
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
-        for (int y = 0; y < getHeight(); y += 2) g.drawHorizontalLine (y, 0.0f, (float) getWidth() * (0.6f + 0.4f * grain.nextFloat()));
-    }
+    g.drawImage (bodyCache, getLocalBounds().toFloat());
 
     paintEdgeLights (g);
 
@@ -2163,6 +2161,226 @@ void NeuroMPCEditor::paint (juce::Graphics& g)
     g.setColour (t.metal ? t.onText : t.accent);
     g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
     g.drawFittedText ("NEURO SAMPLER SUITE", titleArea, juce::Justification::centredRight, 1, 0.7f);
+}
+
+// The instrument body: chassis rim, recessed screen bezel, sunken pad well and raised faceplates behind the controls.
+// NEON 2K5: charcoal plates on hex screws, yellow light leaking from the seams, an underlit pad well. 3842: chamfered
+// glass slabs floating on magenta seams, calibration ticks around the screen. GOLD: engraved plates, domed screws, black glass.
+void NeuroMPCEditor::paintBody (juce::Graphics& g)
+{
+    const auto& t = skinLook.theme();
+    const auto black = juce::Colour (0xff000000), white = juce::Colour (0xffffffff);
+    const auto bounds = getLocalBounds().toFloat();
+
+    g.setGradientFill (juce::ColourGradient::vertical (t.bgTop, 0.0f, t.bgBottom, bounds.getHeight()));
+    g.fillAll();
+
+    if (t.hairline) // machined hairline lattice
+    {
+        g.setColour (t.glow.withAlpha (0.035f));
+        for (int x = 0; x < getWidth(); x += 24) g.drawVerticalLine (x, 0.0f, bounds.getHeight());
+        for (int y = 0; y < getHeight(); y += 24) g.drawHorizontalLine (y, 0.0f, bounds.getWidth());
+    }
+
+    if (t.metal) // brushed grain
+    {
+        juce::Random grain (7);
+        g.setColour (white.withAlpha (0.05f));
+        for (int y = 0; y < getHeight(); y += 2) g.drawHorizontalLine (y, 0.0f, bounds.getWidth() * (0.6f + 0.4f * grain.nextFloat()));
+    }
+
+    // Chassis rim: light catching the top-left, shade bottom-right.
+    g.setGradientFill (juce::ColourGradient (white.withAlpha (t.metal ? 0.6f : 0.14f), 0.0f, 0.0f,
+                                             black.withAlpha (t.metal ? 0.5f : 0.7f), bounds.getRight(), bounds.getBottom(), false));
+    g.drawRoundedRectangle (bounds.reduced (1.5f), 8.0f, 3.0f);
+
+    auto shapeOf = [&] (juce::Rectangle<float> r, float radius)
+    {
+        juce::Path p;
+
+        if (t.hairline) // chamfered corners
+        {
+            const auto c = juce::jmin (10.0f, r.getHeight() * 0.25f);
+            p.startNewSubPath (r.getX() + c, r.getY());
+            p.lineTo (r.getRight() - c, r.getY());
+            p.lineTo (r.getRight(), r.getY() + c);
+            p.lineTo (r.getRight(), r.getBottom() - c);
+            p.lineTo (r.getRight() - c, r.getBottom());
+            p.lineTo (r.getX() + c, r.getBottom());
+            p.lineTo (r.getX(), r.getBottom() - c);
+            p.lineTo (r.getX(), r.getY() + c);
+            p.closeSubPath();
+        }
+        else
+        {
+            p.addRoundedRectangle (r, radius);
+        }
+
+        return p;
+    };
+
+    auto screw = [&] (juce::Point<float> c)
+    {
+        constexpr float r = 3.2f;
+        const auto head = juce::Rectangle<float> (2.0f * r, 2.0f * r).withCentre (c);
+        g.setGradientFill (juce::ColourGradient (t.metal ? juce::Colour (0xfffff6cc) : juce::Colour (0xff9a94a8), head.getX(), head.getY(),
+                                                 t.metal ? juce::Colour (0xff8a6418) : juce::Colour (0xff221e2b), head.getRight(), head.getBottom(), false));
+        g.fillEllipse (head);
+        g.setColour (black.withAlpha (0.65f));
+
+        if (t.metal) // domed slot head
+        {
+            g.drawLine (c.x - r * 0.65f, c.y + r * 0.35f, c.x + r * 0.65f, c.y - r * 0.35f, 0.9f);
+        }
+        else // hex socket
+        {
+            juce::Path hex;
+            hex.addPolygon (c, 6, 1.5f);
+            g.fillPath (hex);
+        }
+    };
+
+    auto raised = [&] (juce::Rectangle<int> area, float growX, float growY, bool screws)
+    {
+        if (area.isEmpty())
+            return;
+
+        const auto r = area.toFloat().expanded (growX, growY);
+        const auto radius = t.radius + 3.0f;
+        const auto shape = shapeOf (r, radius);
+
+        if (t.disco)
+            neuro::ui::NeuroLookAndFeel::glowAround (g, r, radius, t.accent, 0.5f, 4);
+
+        juce::DropShadow (black.withAlpha (t.hairline ? 0.85f : t.metal ? 0.35f : 0.6f), t.hairline ? 16 : 6,
+                          { 0, t.hairline ? 7 : 2 }).drawForPath (g, shape);
+
+        if (t.hairline)    g.setGradientFill (juce::ColourGradient::vertical (t.surfaceHi.withAlpha (0.75f), r.getY(), t.surface.withAlpha (0.55f), r.getBottom()));
+        else if (t.metal)  g.setGradientFill (juce::ColourGradient::vertical (t.surfaceHi, r.getY(), t.surface, r.getBottom()));
+        else               g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff2c2438), r.getY(), juce::Colour (0xff15111d), r.getBottom()));
+        g.fillPath (shape);
+
+        if (t.hairline) // magenta seam, ice-white specular top edge
+        {
+            g.setColour (t.accent.withAlpha (0.85f));
+            g.strokePath (shape, juce::PathStrokeType (1.0f));
+            g.setColour (t.glow.withAlpha (0.55f));
+            g.drawLine (r.getX() + 12.0f, r.getY() + 1.5f, r.getRight() - 12.0f, r.getY() + 1.5f, 0.8f);
+        }
+        else if (t.metal) // engraved border: dark cut with a lit lower lip
+        {
+            const auto inner = r.reduced (5.0f);
+            g.setColour (juce::Colour (0xff5a3f0c).withAlpha (0.55f));
+            g.drawRoundedRectangle (inner, radius - 2.0f, 1.0f);
+            g.setColour (white.withAlpha (0.55f));
+            g.drawRoundedRectangle (inner.translated (0.0f, 1.0f), radius - 2.0f, 0.8f);
+        }
+        else // bevel
+        {
+            g.setColour (white.withAlpha (0.13f));
+            g.drawLine (r.getX() + radius, r.getY() + 0.5f, r.getRight() - radius, r.getY() + 0.5f, 1.0f);
+            g.setColour (black.withAlpha (0.6f));
+            g.drawLine (r.getX() + radius, r.getBottom() - 0.5f, r.getRight() - radius, r.getBottom() - 0.5f, 1.0f);
+        }
+
+        if (screws && ! t.hairline)
+            for (auto c : { r.getTopLeft() + juce::Point<float> (4.5f, 4.5f), r.getTopRight() + juce::Point<float> (-4.5f, 4.5f),
+                            r.getBottomLeft() + juce::Point<float> (4.5f, -4.5f), r.getBottomRight() + juce::Point<float> (-4.5f, -4.5f) })
+                screw (c);
+    };
+
+    auto recessed = [&] (juce::Rectangle<int> area, float growX, float growY, bool underlit)
+    {
+        if (area.isEmpty())
+            return;
+
+        const auto r = area.toFloat().expanded (growX, growY);
+        const auto radius = t.radius + 2.0f;
+        const auto shape = shapeOf (r, radius);
+
+        // Outer lip, then the dark cavity with light falling in from the top.
+        g.setColour (t.metal ? t.surfaceHi : t.hairline ? t.accent.withAlpha (0.8f) : white.withAlpha (0.1f));
+        g.strokePath (shapeOf (r.expanded (1.0f), radius + 1.0f), juce::PathStrokeType (t.metal ? 2.0f : 1.0f));
+        g.setColour (t.metal ? juce::Colour (0xff120c02) : t.hairline ? juce::Colour (0xff04030a) : juce::Colour (0xff07050c));
+        g.fillPath (shape);
+
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (shape);
+
+        if (underlit) // light rising from under the pads
+        {
+            g.setGradientFill (juce::ColourGradient (t.accent.withAlpha (0.22f), r.getCentreX(), r.getCentreY(),
+                                                     t.accent.withAlpha (0.0f), r.getX(), r.getY(), true));
+            g.fillRect (r);
+        }
+
+        g.setGradientFill (juce::ColourGradient::vertical (black.withAlpha (0.75f), r.getY(), black.withAlpha (0.0f), r.getY() + 9.0f));
+        g.fillRect (r.withHeight (9.0f));
+        g.setColour (white.withAlpha (t.metal ? 0.35f : 0.08f));
+        g.drawLine (r.getX() + radius, r.getBottom() - 0.8f, r.getRight() - radius, r.getBottom() - 0.8f, 1.0f);
+    };
+
+    raised (topDeck, 6.0f, 2.0f, true);
+    raised (controlDeck, 6.0f, 2.0f, true);
+    raised (panelDeck, 6.0f, 2.0f, true);
+
+    const auto screen = waveform.getBounds();
+    recessed (screen, 4.0f, 4.0f, false);
+    recessed (padWell, 5.0f, 3.0f, t.disco);
+
+    // Speaker grille under the pads, with the model badge.
+    if (grille.getHeight() > 40)
+    {
+        auto area = grille.toFloat().reduced (8.0f, 0.0f);
+        const auto badge = area.removeFromBottom (18.0f);
+        area.removeFromBottom (6.0f);
+
+        if (t.hairline) // perforated dot matrix
+        {
+            g.setColour (t.glow.withAlpha (0.22f));
+            for (auto y = area.getY() + 3.0f; y < area.getBottom() - 3.0f; y += 7.0f)
+                for (auto x = area.getX() + 3.0f + (std::fmod (y - area.getY(), 14.0f) > 6.0f ? 3.5f : 0.0f); x < area.getRight() - 3.0f; x += 7.0f)
+                    g.fillEllipse (x - 1.2f, y - 1.2f, 2.4f, 2.4f);
+        }
+        else // vent slots, lit from inside on NEON
+        {
+            for (auto y = area.getY() + 2.0f; y + 5.0f < area.getBottom(); y += 10.0f)
+            {
+                const auto slot = juce::Rectangle<float> (area.getX() + 6.0f, y, area.getWidth() - 12.0f, 4.0f);
+                g.setColour (t.metal ? juce::Colour (0xff3a2a08) : black);
+                g.fillRoundedRectangle (slot, 2.0f);
+                g.setColour (t.disco ? t.accent.withAlpha (0.35f) : white.withAlpha (t.metal ? 0.45f : 0.08f));
+                g.drawLine (slot.getX() + 2.0f, slot.getBottom() + 0.5f, slot.getRight() - 2.0f, slot.getBottom() + 0.5f, t.disco ? 1.2f : 0.8f);
+            }
+        }
+
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        if (t.metal) // engraved
+        {
+            g.setColour (white.withAlpha (0.55f));
+            g.drawText ("NSS-1  SAMPLER", badge.translated (0.0f, 1.0f), juce::Justification::centred);
+            g.setColour (juce::Colour (0xff5a3f0c));
+        }
+        else
+        {
+            g.setColour (t.disco ? t.accent : t.accent.withAlpha (0.9f));
+        }
+        g.drawText ("NSS-1  SAMPLER", badge, juce::Justification::centred);
+    }
+
+    if (t.hairline) // calibration ticks along the screen bezel
+    {
+        const auto r = screen.toFloat().expanded (4.0f);
+        g.setColour (t.glow.withAlpha (0.45f));
+
+        for (int i = 0; r.getX() + 14.0f + (float) i * 12.0f < r.getRight() - 14.0f; ++i)
+        {
+            const auto x = r.getX() + 14.0f + (float) i * 12.0f;
+            const auto len = i % 5 == 0 ? 3.0f : 1.5f;
+            g.drawLine (x, r.getY() + 0.5f, x, r.getY() + 0.5f + len, 0.8f);
+            g.drawLine (x, r.getBottom() - 0.5f, x, r.getBottom() - 0.5f - len, 0.8f);
+        }
+    }
 }
 
 // Light lining the board and spilling inwards, in the 10 px margin around everything. NEON: chasing disco lights.
@@ -2236,9 +2454,11 @@ void NeuroMPCEditor::applySkin (bool flash)
 void NeuroMPCEditor::resized()
 {
     learnOverlay.setBounds (getLocalBounds());
+    bodyCache = {};
 
     auto area = getLocalBounds().reduced (10);
     auto top = area.removeFromTop (34);
+    topDeck = top;
 
     for (auto* b : { &loadButton, &autoButton })
     {
@@ -2287,6 +2507,8 @@ void NeuroMPCEditor::resized()
     padColumn.removeFromTop (4);
     auto padArea = padColumn.removeFromTop (padColumn.getWidth()).toFloat();
     const auto cell = padArea.getWidth() / 4.0f;
+    padWell = padArea.toNearestInt();
+    grille = padColumn.withTrimmedTop (12);
 
     for (int i = 0; i < numPads; ++i)
         pads[(size_t) i]->setBounds (juce::Rectangle<float> (padArea.getX() + (float) (i % 4) * cell,
@@ -2296,6 +2518,7 @@ void NeuroMPCEditor::resized()
     bottom.removeFromLeft (16);
 
     // Global knobs (labels sit above), then global pitch/LFO selectors.
+    const auto deckTop = bottom.getY();
     bottom.removeFromTop (16);
     auto knobs = bottom.removeFromTop (76);
 
@@ -2304,6 +2527,7 @@ void NeuroMPCEditor::resized()
 
     bottom.removeFromTop (6);
     auto selectors = bottom.removeFromTop (24);
+    controlDeck = { bottom.getX(), deckTop, bottom.getWidth(), selectors.getBottom() - deckTop };
 
     for (auto [box, width] : { std::pair { &scale, 140 }, { &scaleRoot, 60 }, { &lfoShape, 100 }, { &lfoSync, 80 } })
     {
@@ -2313,6 +2537,7 @@ void NeuroMPCEditor::resized()
 
     // Tabs: selected slice / selected pad share one panel area.
     bottom.removeFromTop (8);
+    panelDeck = bottom;
     auto tabs = bottom.removeFromTop (24);
     sliceTab.setBounds (tabs.removeFromLeft (70));
     padTab.setBounds (tabs.removeFromLeft (70));

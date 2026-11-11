@@ -13,7 +13,7 @@ C++20 · JUCE 9.0.4 (pinned) · CMake · AGPL-3.0.
 4. **Upgrading from NEURO MPC (v1.3.0 or earlier)?** Delete the old `NEURO MPC.vst3`, `NEURO MPC.component` and `NEURO MPC.app` first. It's the same plugin under its new name, so your projects and presets still open.
 5. Rescan plugins in your host: Logic, Live or MPC 3. To run alongside an MPC, see [Documentation/MPC.md](Documentation/MPC.md).
 
-## Status: v1.4.0, public MVP + GW-1 / KAOSS NEXUS link
+## Status: v1.5.0, public MVP + GW-1 / KAOSS NEXUS link
 
 The acceptance status of each requirement, with evidence, is in [Documentation/ACCEPTANCE.md](Documentation/ACCEPTANCE.md). **Still open:** hands-on sessions in MPC 3, Ableton Live and Logic Pro (checklist in [MPC.md](Documentation/MPC.md)), notarization. pluginval strictness 10 passes on the VST3 and AU. See [RELEASE_REDTEAM.md](Documentation/RELEASE_REDTEAM.md).
 

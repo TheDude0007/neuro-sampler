@@ -73,6 +73,11 @@ private:
     void showPanel (Panel);
     void applySkin (bool flash);
     void paintEdgeLights (juce::Graphics&);
+    void paintBody (juce::Graphics&);
+    juce::Image bodyCache; // the instrument body, redrawn only when the size, skin or display scale changes
+    int bodyCacheTheme = -1;
+    float bodyCacheScale = 0.0f;
+    juce::Rectangle<int> topDeck, padWell, grille, controlDeck, panelDeck;
     neuro::ui::NeuroLookAndFeel skinLook;
     juce::ComboBox skinBox;
     float edgePhase = 0.0f, edgeFlash = 0.0f;

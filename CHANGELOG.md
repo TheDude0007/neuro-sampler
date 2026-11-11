@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0 (2026-11-11): Machine bodies
+- **Each skin is now a full instrument body:** a bevelled chassis, a recessed screen bezel, a sunken pad well, raised faceplates behind the controls, and a speaker grille with an **NSS-1** badge under the pads.
+  - **NEON 2K5:** charcoal plates on hex screws, yellow light leaking from the seams, an underlit pad well, glowing vents.
+  - **3842:** chamfered glass slabs floating on magenta seams, calibration ticks around the screen, a perforated grille.
+  - **GOLD:** engraved gold plates, domed screws, a black glass screen and pad well.
+- Controls stay where they were. The body is drawn once per size or skin change, so the animated edge lights cost no more than before.
+
 ## 1.4.0 (2026-11-10): Now called Neuro Sampler Suite
 - **New name:** NEURO MPC is now **Neuro Sampler Suite** (plugin, app, virtual MIDI port and title). The manufacturer shows as **Neuro**.
 - **Nothing breaks:** same plugin codes, so existing Logic, Live and MPC projects load it. Presets, stems and the AI model stay in their existing `NEURO MPC` folders.
