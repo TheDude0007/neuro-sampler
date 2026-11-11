@@ -370,8 +370,58 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
                              juce::dontSendNotification);
         };
     }
-    showStems.setTooltip ("Open the stems folder in Finder: one WAV per drum (Kick, Snare, Cymbals, Residual) to drag into Logic or Live");
-    showStems.onClick = [this] { auto f = proc.getStemsFolder(); f.createDirectory(); f.revealToUser(); };
+    showStems.setTooltip ("The last stems (Split stems: Drums, Bass, Vocals, Other; Separate drums: Kick, Snare, Cymbals, Residual): "
+                          "load one, go back to the original song, or show the WAVs in Finder to drag into Logic or Live");
+    showStems.onClick = [this]
+    {
+        const auto folder = proc.getStemsFolder();
+        auto files = folder.findChildFiles (juce::File::findFiles, false, "*.wav");
+        files.sort();
+        juce::PopupMenu menu;
+
+        for (int i = 0; i < files.size(); ++i)
+            menu.addItem (i + 1, "Load " + files[i].getFileNameWithoutExtension());
+
+        if (const auto original = proc.getStemSource(); original.existsAsFile())
+            menu.addItem (1000, "Load original: " + original.getFileNameWithoutExtension());
+
+        menu.addSeparator();
+        menu.addItem (2000, "Show in Finder");
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (showStems), [this, files, folder] (int result)
+        {
+            juce::String error;
+            const auto file = result == 1000 ? proc.getStemSource() : result > 0 && result <= files.size() ? files[result - 1] : juce::File();
+
+            if (result == 2000)
+            {
+                folder.createDirectory();
+                folder.revealToUser();
+            }
+            else if (file.existsAsFile())
+            {
+                kitInfo.setText (proc.loadSample (file, error) ? "Loaded " + file.getFileName() : error, juce::dontSendNotification);
+                waveform.repaint();
+            }
+        });
+    };
+
+    splitStemsButton.setTooltip ("AI (Demucs): split the loaded song into Drums, Bass, Vocals and Other WAVs (first 8 min). "
+                                 "Load one from Stems... First use downloads the model (84 MB). Click again to cancel.");
+    splitStemsButton.onClick = [this]
+    {
+        using S = NeuroMPCProcessor::AiState;
+        const auto state = proc.getAiState();
+
+        if (state == S::extracting)
+            proc.cancelAi();
+        else if (state == S::downloading)
+            return;
+        else if (! NeuroMPCProcessor::isStemModelInstalled())
+            proc.downloadStemModel();
+        else if (! proc.startSplitStems())
+            kitInfo.setText ("Load a song first", juce::dontSendNotification);
+    };
     kitToPads.setTooltip ("Put the recognised drums on the pads: A1 Kick, A2 Snare, A3 Closed Hat, A4 Open Hat, A5-A7 Toms, A8 Crash, "
                           "A9 Ride, A10 Perc, A11 Tonal (best hit of each); the other hits on banks B-D. Done automatically by "
                           "Deconstruct and Separate drums");
@@ -1261,7 +1311,7 @@ void NeuroMPCEditor::registerMappables()
              { &extractAiButton, "kit.extractAi" }, { &teachKick, "kit.teachKick" }, { &teachSnare, "kit.teachSnare" }, { &teachHat, "kit.teachHat" }, { &teachClear, "kit.teachClear" }, { &showStems, "kit.showStems" }, { &kitToPads, "kit.toPads" }, { &repeatLock, "repeat.lock" }, { &skinBox, "view.skin" },
              { &chopTab, "view.chop" }, { &chopMode, "chop.mode" }, { &chopGrid, "chop.grid" }, { &chopSensitivity, "chop.sensitivity" },
              { &chopButton, "chop.go" }, { &chopSnap, "chop.snap" }, { &slicesToPads, "chop.slicesToPads" }, { &chopKitToPads, "chop.kitToPads" },
-             { &levelsMode, "chop.levels" } })
+             { &levelsMode, "chop.levels" }, { &splitStemsButton, "kit.splitStems" } })
         id (*c, name);
 
     for (int pc = 0; pc < 12; ++pc)
@@ -1659,7 +1709,7 @@ std::vector<juce::Component*> NeuroMPCEditor::kitPanelComponents()
 {
     std::vector<juce::Component*> list { &separateButton, &timbreMap, &kitTitle, &kitInfo, &chordInfo, &sliceClass, &laneClass, &chordMode, &chordInput,
                                          &hitSensitivity, &chordSplit, &deconstructButton, &retargetButton, &stepToSlice, &stepToTimbre, &stepToPad,
-                                         &extractAiButton, &teachKick, &teachSnare, &teachHat, &teachClear, &showStems, &kitToPads, &drumOutputs };
+                                         &extractAiButton, &teachKick, &teachSnare, &teachHat, &teachClear, &showStems, &kitToPads, &drumOutputs, &splitStemsButton };
 
     for (auto& k : classLevels)
         list.push_back (&k);
@@ -2036,7 +2086,9 @@ void NeuroMPCEditor::updateAiStatus()
 
     if (state == S::ready)
     {
-        if (const auto file = proc.finishExtractDrums(); file.existsAsFile())
+        if (proc.isSplittingStems())
+            proc.finishSplitStems();
+        else if (const auto file = proc.finishExtractDrums(); file.existsAsFile())
             separateButton.onClick();
         return;
     }
@@ -2046,8 +2098,11 @@ void NeuroMPCEditor::updateAiStatus()
     else if ((int) state != shownAiState)
         kitInfo.setText (proc.getAiMessage(), juce::dontSendNotification);
 
-    extractAiButton.setButtonText (state == S::extracting ? "Cancel AI" : state == S::downloading ? "Downloading..."
+    const auto stems = proc.isSplittingStems();
+    extractAiButton.setButtonText (! stems && state == S::extracting ? "Cancel AI" : ! stems && state == S::downloading ? "Downloading..."
                                    : NeuroMPCProcessor::isDrumModelInstalled() ? "Extract drums (AI)" : "Get AI model");
+    splitStemsButton.setButtonText (stems && state == S::extracting ? "Cancel AI" : stems && state == S::downloading ? "Downloading..."
+                                    : NeuroMPCProcessor::isStemModelInstalled() ? "Split stems (AI)" : "Get stem model");
     shownAiState = (int) state;
 }
 
@@ -2857,6 +2912,7 @@ void NeuroMPCEditor::resized()
             b->setBounds (rStems.removeFromLeft (110));
             rStems.removeFromLeft (6);
         }
+        splitStemsButton.setBounds (rStems.removeFromLeft (124));
         auto r3 = row();
         chordMode.setBounds (r3.removeFromLeft (190));
         r3.removeFromLeft (6);

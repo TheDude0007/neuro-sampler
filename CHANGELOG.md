@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.0 (2026-11-11): Stem splitting
+- **Split stems (AI)** (KIT tab): splits a song into **Drums, Bass, Vocals and Other** WAVs (Demucs 4-source model, in-process, 84 MB download, SHA-256 pinned). Saved in `~/Music/NEURO MPC/Separated/<name> (stems)/`, ready to drag into Logic or Live.
+- **Stems...** (was Show stems): load any stem to slice, chop or play on pads; go back to the original song; or show the folder in Finder.
+- Tested: drums SDR -14.8 → 20.4 dB and bass SDR 8.0 → 34.5 dB on a drums + bass + chords test song.
+
 ## 1.5.0 (2026-11-11): Machine bodies
 - **Each skin is now a full instrument body:** a bevelled chassis, a recessed screen bezel, a sunken pad well, raised faceplates behind the controls, and a speaker grille with an **NSS-1** badge under the pads.
   - **NEON 2K5:** charcoal plates on hex screws, yellow light leaking from the seams, an underlit pad well, glowing vents.

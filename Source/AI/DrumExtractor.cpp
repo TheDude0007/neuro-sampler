@@ -43,9 +43,22 @@ namespace
 bool extractDrums (const std::string& modelFile, const float* left, const float* right, int64_t numSamples,
                    std::vector<float>& outLeft, std::vector<float>& outRight, Job& job, std::string& error)
 {
+    std::vector<std::vector<float>> out;
+
+    if (! separate (modelFile, left, right, numSamples, { drums }, out, job, error))
+        return false;
+
+    outLeft = std::move (out[0]);
+    outRight = std::move (out[1]);
+    return true;
+}
+
+bool separate (const std::string& modelFile, const float* left, const float* right, int64_t numSamples,
+               const std::vector<int>& targets, std::vector<std::vector<float>>& result, Job& job, std::string& error)
+{
     const auto* model = loadModel (modelFile, error);
 
-    if (model == nullptr || numSamples <= 0)
+    if (model == nullptr || numSamples <= 0 || targets.empty())
         return false;
 
     // Split long input across threads: each chunk gets 1 s of context on both sides, chunks are cross-faded there.
@@ -55,7 +68,8 @@ bool extractDrums (const std::string& modelFile, const float* left, const float*
     const auto numChunks = std::clamp (n / (20 * sampleRate), 1, std::max (1, cores / 2));
     const auto chunk = (n + numChunks - 1) / numChunks;
 
-    std::vector<float> sum ((size_t) n * 2, 0.0f), weight ((size_t) n, 0.0f);
+    const auto channels = targets.size() * 2;
+    std::vector<float> sum ((size_t) n * channels, 0.0f), weight ((size_t) n, 0.0f);
     std::vector<float> progress ((size_t) numChunks, 0.0f);
     std::vector<std::thread> threads;
     std::mutex mergeMutex;
@@ -94,8 +108,12 @@ bool extractDrums (const std::string& modelFile, const float* left, const float*
                     if (i < core0) w = 1.0f - (float) (core0 - i) / (float) (overlap + 1);
                     else if (i >= core1) w = 1.0f - (float) (i - core1 + 1) / (float) (overlap + 1);
 
-                    sum[(size_t) i * 2] += w * out (0, 0, i - from); // target 0 = drums
-                    sum[(size_t) i * 2 + 1] += w * out (0, 1, i - from);
+                    for (size_t k = 0; k < targets.size(); ++k)
+                    {
+                        sum[(size_t) i * channels + 2 * k] += w * out (targets[k], 0, i - from);
+                        sum[(size_t) i * channels + 2 * k + 1] += w * out (targets[k], 1, i - from);
+                    }
+
                     weight[(size_t) i] += w;
                 }
             }
@@ -114,14 +132,14 @@ bool extractDrums (const std::string& modelFile, const float* left, const float*
         return false;
     }
 
-    outLeft.resize ((size_t) n);
-    outRight.resize ((size_t) n);
+    result.assign (channels, std::vector<float> ((size_t) n));
 
     for (int i = 0; i < n; ++i)
     {
         const auto w = std::max (1.0e-6f, weight[(size_t) i]);
-        outLeft[(size_t) i] = sum[(size_t) i * 2] / w;
-        outRight[(size_t) i] = sum[(size_t) i * 2 + 1] / w;
+
+        for (size_t ch = 0; ch < channels; ++ch)
+            result[ch][(size_t) i] = sum[(size_t) i * channels + ch] / w;
     }
 
     job.progress = 1.0f;

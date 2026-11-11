@@ -242,7 +242,7 @@ private:
     juce::TextButton separateButton { "Separate drums" }, deconstructButton { "Deconstruct loop" }, retargetButton { "Retarget to timbre" },
                      stepToSlice { "Step -> slice" }, stepToTimbre { "Step -> timbre" }, stepToPad { "Step -> pad" },
                      extractAiButton { "Extract drums (AI)" }, teachKick { "Teach kick" }, teachSnare { "Teach snare" }, teachHat { "Teach hat/cym" }, teachClear { "Clear taught" },
-                     showStems { "Show stems" }, kitToPads { "Kit -> pads" };
+                     showStems { "Stems..." }, kitToPads { "Kit -> pads" }, splitStemsButton { "Split stems (AI)" };
     juce::ToggleButton drumOutputs { "Drum outputs" };
 
     int shownAiState = -1;

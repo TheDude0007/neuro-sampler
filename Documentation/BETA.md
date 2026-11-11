@@ -19,6 +19,7 @@ Thanks for testing. Things will break; telling us what broke is the whole point.
 3. **Note Repeat.** Hold **REPEAT**, play a pad, change the rate box to 1/32 or 1/128. In the CHOP tab, lower the gate on a longer sample. Does it roll and glitch the way you'd expect?
 4. **Stems.** In the **KIT** tab, click **Separate drums**, then **Show stems**, and drag the WAVs into your DAW. How clean are they?
 5. **AI drums (optional, 84 MB download).** Load a full song, then **KIT ▸ Extract drums (AI)**. It's slow: expect about a minute or more for a song.
+   **AI stems (optional, another 84 MB):** **KIT ▸ Split stems (AI)** (click once to download, again to split). Then **Stems...** ▸ load the Vocals or Bass and play it on the pads.
 
 ## Experimental: tell us if these work at all
 - Inside Akai's MPC 3 desktop software.

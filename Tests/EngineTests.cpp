@@ -1697,6 +1697,56 @@ int main()
                          sp.getAiMessage().toRawUTF8());
             CHECK (returnMs < 5.0 && stopMs < 8000.0 && sp.getAiState() == NeuroMPCProcessor::AiState::failed && sp.getAiMessage() == "Cancelled");
             stem.deleteFile();
+
+            // Split stems (AI, general 4-source model): four WAVs; the drums and bass stems are much closer to the real
+            // drums and bass line than the mix is. The loaded sample is kept; Stems... loads one.
+            if (NeuroMPCProcessor::isStemModelInstalled())
+            {
+                CHECK (sp.loadSample (mixFile, error));
+                const auto s0 = juce::Time::getMillisecondCounterHiRes();
+                const auto folder = sp.splitStemsBlocking (aiError);
+                const auto splitSeconds = (juce::Time::getMillisecondCounterHiRes() - s0) / 1000.0;
+                const auto name = mixFile.getFileNameWithoutExtension();
+                auto stemFile = [&] (const char* part) { return folder.getChildFile (name + " - " + part + ".wav"); };
+                CHECK (folder.isDirectory() && sp.getSample()->file == mixFile && sp.getStemsFolder() == folder && sp.getStemSource() == mixFile);
+
+                for (auto* part : { "Drums", "Bass", "Other", "Vocals" })
+                    CHECK (stemFile (part).existsAsFile());
+
+                juce::AudioBuffer<float> bassOnly (1, song.getNumSamples());
+                for (int i = 0; i < song.getNumSamples(); ++i)
+                {
+                    const auto t = (float) (i / songRate);
+                    bassOnly.setSample (0, i, 0.3f * std::sin (6.2831853f * (i % (int) (4 * songRate) < 2 * songRate ? 55.0f : 73.4f) * t));
+                }
+
+                auto sdrOf = [&] (const juce::AudioBuffer<float>& reference, const juce::File& file)
+                {
+                    std::unique_ptr<juce::AudioFormatReader> reader (sp.formats.createReaderFor (file));
+                    if (reader == nullptr) return -100.0;
+                    juce::AudioBuffer<float> estimate (1, (int) reader->lengthInSamples);
+                    reader->read (&estimate, 0, estimate.getNumSamples(), 0, true, false);
+                    double errSum = 0.0, refSum = 0.0;
+                    for (int i = 0; i < juce::jmin (reference.getNumSamples(), estimate.getNumSamples()); ++i)
+                    {
+                        const auto diff = (double) estimate.getSample (0, i) - reference.getSample (0, i);
+                        errSum += diff * diff;
+                        refSum += (double) reference.getSample (0, i) * reference.getSample (0, i);
+                    }
+                    return 10.0 * std::log10 (refSum / std::max (errSum, 1.0e-20));
+                };
+
+                const auto drumsSdr = sdrOf (drumsOnly, stemFile ("Drums")), bassSdr = sdrOf (bassOnly, stemFile ("Bass"));
+                const auto mixDrums = sdr (song), mixBass = sdrOf (bassOnly, mixFile);
+                std::printf ("  AI stems: %.1f s for %.1f s of audio; drums SDR mix %.1f -> %.1f dB, bass SDR mix %.1f -> %.1f dB %s\n",
+                             splitSeconds, song.getNumSamples() / songRate, mixDrums, drumsSdr, mixBass, bassSdr, aiError.toRawUTF8());
+                CHECK (drumsSdr > mixDrums + 6.0 && bassSdr > mixBass + 6.0);
+                folder.deleteRecursively();
+            }
+            else
+            {
+                std::printf ("  AI stems: model not installed, skipped\n");
+            }
         }
         else
         {

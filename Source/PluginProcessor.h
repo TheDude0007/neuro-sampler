@@ -188,6 +188,16 @@ public:
     enum class AiState { idle, downloading, extracting, ready, failed };
     static juce::File getDrumModelFile();
     static bool isDrumModelInstalled() { return getDrumModelFile().existsAsFile(); }
+    // Split stems (AI, Demucs htdemucs 4-source, 84 MB): Drums, Bass, Vocals and Other WAVs of the loaded song (first
+    // 8 min) in ~/Music/NEURO MPC/Separated/<name> (stems)/. The loaded sample stays; any stem loads from Stems...
+    static juce::File getStemModelFile();
+    static bool isStemModelInstalled() { return getStemModelFile().existsAsFile(); }
+    void downloadStemModel();                   // async, like downloadDrumModel
+    bool startSplitStems();                     // async; false if busy, no sample or no model
+    juce::File finishSplitStems();              // message thread, after AiState::ready: writes the WAVs, returns their folder
+    juce::File splitStemsBlocking (juce::String& error); // tests and offline use
+    bool isSplittingStems() const noexcept { return aiTask == 1; } // the job the AI state belongs to: stems, else drums
+    juce::File getStemSource() const { return stemSource; }        // the song the last split came from
     void downloadDrumModel();                   // async; progress via getAiState/getAiProgress
     bool startExtractDrums();                   // async; false if busy, no sample or no model
     juce::File finishExtractDrums();            // message thread, after AiState::ready: writes + loads the stem
@@ -427,7 +437,13 @@ private:
     ModelDownloadListener modelListener { *this };
     std::unique_ptr<juce::URL::DownloadTask> modelDownload;
     void setAiState (AiState, const juce::String& message = {});
-    bool computeDrums (const neuro::SampleData&, juce::AudioBuffer<float>& out, juce::String& error);
+    // model: 0 = drums, 1 = stems. One output buffer per target, at the source's rate; at most maxSeconds analysed.
+    bool computeSeparation (const neuro::SampleData&, int model, const std::vector<int>& targets, double maxSeconds,
+                            std::vector<juce::AudioBuffer<float>>& out, juce::String& error);
+    void downloadModel (int model);
+    std::atomic<int> aiTask { 0 }, downloadingModel { 0 };
+    std::vector<juce::AudioBuffer<float>> aiStems; // guarded by aiMutex
+    juce::File stemSource;
     std::vector<neuro::nmf::Example> taughtDrums; // guarded by modelLock
     juce::File taughtFile, lastStemsFolder;
     bool restoringState = false; // message thread: project/preset restore or relink in progress

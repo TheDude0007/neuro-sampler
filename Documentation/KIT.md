@@ -88,6 +88,15 @@ The groove check is only a proxy. A real accuracy figure needs a hand-labelled s
 - **Cancel:** clicking again cancels; the button returns immediately.
 - **Quality** (real Apple Drummer loop + bass + chords): drums SDR goes from -14.8 dB (the mix) to **20.3 dB** (the stem).
 
+## Split stems (AI) (1.6.0)
+- **How:** load a song, then KIT ▸ **Split stems (AI)**. It uses Demucs's general 4-source model (`htdemucs`, MIT) through the same in-process engine.
+- **Model:** the first click downloads it (84 MB, SHA-256 pinned, same pinned repo as the drum model) to `~/Library/Application Support/NEURO MPC/Models`. Then click again to split.
+- **Output:** `~/Music/NEURO MPC/Separated/<name> (stems)/<name> - Drums.wav`, `- Bass.wav`, `- Vocals.wav` and `- Other.wav`, all the same length and start, ready to drag into Logic or Live. The song stays loaded.
+- **Load a stem:** **Stems...** lists the last stems: load any one (to slice it, chop it or put it on pads), go back to the original song, or show the folder in Finder.
+- **Length:** the first 8 minutes (four stereo stems of a longer song would need several GB of memory).
+- **Speed:** about the same as Extract drums: roughly 4× real time per thread, split across cores for songs over 20 s. Clicking again cancels.
+- **Quality** (the same test song): drums SDR -14.8 dB (mix) → **20.4 dB**, bass SDR 8.0 dB → **34.5 dB**. For the cleanest drums alone, **Extract drums (AI)** uses the drums-tuned model.
+
 ## Kit on pads, stems and outputs (1.1.1)
 **Drums on pads:**
 - **Deconstruct loop** and **Separate drums** put the drums on the pads in MPC order. Each pad on bank A gets the loudest hit of its drum:
@@ -102,7 +111,7 @@ The groove check is only a proxy. A real accuracy figure needs a hand-labelled s
 **Stems for Logic and Live:**
 - **Separate drums** writes `~/Music/NEURO MPC/Separated/<loop>/<loop> - Kick.wav`, `- Snare.wav`, `- Cymbals.wav` and `- Residual.wav`.
 - All four have the same length and start, so they line up when dragged into a DAW.
-- **Show stems** opens the folder in Finder.
+- **Stems...** loads any stem, or shows the folder in Finder.
 
 **Separate outputs:**
 - Off by default: everything plays on the main output.
