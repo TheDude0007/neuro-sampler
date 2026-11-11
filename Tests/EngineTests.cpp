@@ -922,6 +922,30 @@ int main()
         CHECK (! pr.loadPreset (presetDir.getChildFile ("missing.neurompc")));
         presetDir.deleteRecursively();
 
+        // 128 slices: all on pads (banks A-H), every pad on its own MIDI note, and the last slice plays from its note.
+        {
+            NeuroMPCProcessor big;
+            big.prepareToPlay (rate, block);
+            CHECK (big.loadSample (wavFile, error));
+            big.editSlices ([] (auto& s) { s.grid (128); });
+            std::vector<int> padNotes;
+            auto allOnPads = big.getSlices().size() == 128;
+            for (int i = 0; i < neuro::numPads; ++i)
+            {
+                padNotes.push_back (big.getPads()[i].note);
+                allOnPads = allOnPads && big.getPads()[i].sliceId == big.getSlices().getSlices()[(size_t) i].id;
+            }
+            std::sort (padNotes.begin(), padNotes.end());
+            CHECK (neuro::numPads == 128 && std::unique (padNotes.begin(), padNotes.end()) == padNotes.end() && allOnPads);
+            setParam (big, ParamIDs::attack, 0.0f);
+            juce::MidiBuffer midi;
+            midi.addEvent (juce::MidiMessage::noteOn (1, big.getPads()[127].note, 1.0f), 0);
+            juce::AudioBuffer<float> buf (2, block);
+            big.processBlock (buf, midi);
+            std::printf ("  128 slices: pad H16 = note %d, peak %.3f\n", big.getPads()[127].note, buf.getMagnitude (0, 0, block));
+            CHECK (buf.getMagnitude (0, 0, block) > 0.0f);
+        }
+
         // Host sync: the sequencer follows host PPQ, tempo changes and loops, and stops cleanly with the transport.
         NeuroMPCProcessor hs;
         MockPlayHead host;
@@ -1710,7 +1734,7 @@ int main()
                 auto stemFile = [&] (const char* part) { return folder.getChildFile (name + " - " + part + ".wav"); };
                 CHECK (folder.isDirectory() && sp.getSample()->file == mixFile && sp.getStemsFolder() == folder && sp.getStemSource() == mixFile);
 
-                for (auto* part : { "Drums", "Bass", "Other", "Vocals" })
+                for (auto* part : { "Drums", "Bass", "Other", "Vocals", "Lows", "Mids" })
                     CHECK (stemFile (part).existsAsFile());
 
                 juce::AudioBuffer<float> bassOnly (1, song.getNumSamples());
@@ -1741,6 +1765,22 @@ int main()
                 std::printf ("  AI stems: %.1f s for %.1f s of audio; drums SDR mix %.1f -> %.1f dB, bass SDR mix %.1f -> %.1f dB %s\n",
                              splitSeconds, song.getNumSamples() / songRate, mixDrums, drumsSdr, mixBass, bassSdr, aiError.toRawUTF8());
                 CHECK (drumsSdr > mixDrums + 6.0 && bassSdr > mixBass + 6.0);
+
+                // Layer 2: Lows + Mids is exactly Bass + Other (24-bit files); Lows carries the bass line.
+                auto readStem = [&] (const char* part)
+                {
+                    std::unique_ptr<juce::AudioFormatReader> reader (sp.formats.createReaderFor (stemFile (part)));
+                    juce::AudioBuffer<float> b (1, reader != nullptr ? (int) reader->lengthInSamples : 0);
+                    if (reader != nullptr) reader->read (&b, 0, b.getNumSamples(), 0, true, false);
+                    return b;
+                };
+                const auto lows = readStem ("Lows"), mids = readStem ("Mids"), bass = readStem ("Bass"), other = readStem ("Other");
+                auto worst = 0.0f;
+                for (int i = 0; i < lows.getNumSamples(); ++i)
+                    worst = std::max (worst, std::abs (lows.getSample (0, i) + mids.getSample (0, i) - bass.getSample (0, i) - other.getSample (0, i)));
+                const auto lowsSdr = sdrOf (bassOnly, stemFile ("Lows"));
+                std::printf ("  AI stems layer 2: Lows + Mids vs Bass + Other max error %.1e; bass SDR in Lows %.1f dB\n", worst, lowsSdr);
+                CHECK (lows.getNumSamples() == song.getNumSamples() && worst < 1.0e-5f && lowsSdr > mixBass + 6.0);
                 folder.deleteRecursively();
             }
             else

@@ -237,7 +237,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     chopMode.setSelectedId (1, juce::dontSendNotification);
     chopMode.setTooltip ("Transients: a slice per hit. Grid: equal slices. Kit: recognise the drums and put them on pads. "
                          "Manual: one slice; double-click the waveform to chop (snaps to hits)");
-    for (int n : { 4, 8, 16, 32, 64 }) chopGrid.addItem (juce::String (n) + " slices", n);
+    for (int n : { 4, 8, 16, 32, 64, 128 }) chopGrid.addItem (juce::String (n) + " slices", n);
     chopGrid.setSelectedId (16, juce::dontSendNotification);
     chopSensitivity.setRange (0.05, 1.0, 0.01);
     chopSensitivity.setValue (0.5, juce::dontSendNotification);
@@ -406,7 +406,8 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
         });
     };
 
-    splitStemsButton.setTooltip ("AI (Demucs): split the loaded song into Drums, Bass, Vocals and Other WAVs (first 8 min). "
+    splitStemsButton.setTooltip ("AI (Demucs): split the loaded song into Drums, Bass, Vocals and Other WAVs, plus a second layer: "
+                                 "Vocals, Drums, Lows and Mids (the rest of the music split at 200 Hz). First 8 min. "
                                  "Load one from Stems... First use downloads the model (84 MB). Click again to cancel.");
     splitStemsButton.onClick = [this]
     {
@@ -1039,7 +1040,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     sensitivity.setValue (0.6, juce::dontSendNotification);
     sensitivity.setTooltip ("Transient sensitivity");
 
-    for (int n : { 4, 8, 16, 32, 64 })
+    for (int n : { 4, 8, 16, 32, 64, 128 })
         gridDivisions.addItem (juce::String (n) + " slices", n);
 
     gridDivisions.setSelectedId (16, juce::dontSendNotification);
@@ -2547,13 +2548,9 @@ void NeuroMPCEditor::resized()
     auto bottom = area.removeFromBottom (juce::jmin (460, area.getHeight() * 3 / 5));
     waveform.setBounds (area.withTrimmedBottom (8));
 
-    // Bank selector over the pads; bottom row = pad 1 as on MPC hardware.
-    auto padColumn = bottom.removeFromLeft (juce::jmin (300, bottom.getHeight() - 26));
+    // Bank selector (A-H) over the pads, Note Repeat under them; bottom row = pad 1 as on MPC hardware.
+    auto padColumn = bottom.removeFromLeft (juce::jmin (300, bottom.getHeight() - 56));
     auto bankRow = padColumn.removeFromTop (22);
-
-    repeatRate.setBounds (bankRow.removeFromRight (76));
-    repeatLock.setBounds (bankRow.removeFromRight (50));
-    repeatHold.setBounds (bankRow.removeFromRight (64).reduced (2, 0));
     const auto bankWidth = bankRow.getWidth() / neuro::numBanks;
 
     for (auto& b : bankButtons)
@@ -2563,7 +2560,14 @@ void NeuroMPCEditor::resized()
     auto padArea = padColumn.removeFromTop (padColumn.getWidth()).toFloat();
     const auto cell = padArea.getWidth() / 4.0f;
     padWell = padArea.toNearestInt();
-    grille = padColumn.withTrimmedTop (12);
+
+    // Note Repeat under the pads.
+    padColumn.removeFromTop (8);
+    auto repeatRow = padColumn.removeFromTop (22);
+    repeatHold.setBounds (repeatRow.removeFromLeft (80).reduced (2, 0));
+    repeatLock.setBounds (repeatRow.removeFromLeft (56));
+    repeatRate.setBounds (repeatRow.removeFromLeft (80));
+    grille = padColumn.withTrimmedTop (8);
 
     for (int i = 0; i < numPads; ++i)
         pads[(size_t) i]->setBounds (juce::Rectangle<float> (padArea.getX() + (float) (i % 4) * cell,

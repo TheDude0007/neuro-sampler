@@ -218,7 +218,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
         std::make_unique<AudioParameterInt> (ParameterID { ParamIDs::weavePitch, 1 }, "Weave Pitch From", 0, numSeqPatterns, 0,
                                              AudioParameterIntAttributes().withStringFromValueFunction (
                                                  [] (int v, int) { return v == 0 ? String ("none") : "pattern " + String (v); })),
-        std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::padBank, 1 }, "Pad Bank", StringArray { "A", "B", "C", "D" }, 0),
+        std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::padBank, 1 }, "Pad Bank", StringArray { "A", "B", "C", "D", "E", "F", "G", "H" }, 0),
         std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::padBankFollow, 1 }, "Pads Follow Bank", true),
         std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::padChannel, 1 }, "Pad MIDI Channel", [] {
                                                     StringArray names { "Any" };
@@ -1408,6 +1408,28 @@ namespace
     }
 
     constexpr const char* aiStemNames[] { "Drums", "Bass", "Other", "Vocals" }; // htdemucs target order
+    constexpr double lowsCrossoverHz = 200.0;
+
+    // Zero-phase low-pass (2nd-order Butterworth run forwards, then backwards): lows + (x - lows) == x exactly.
+    juce::AudioBuffer<float> zeroPhaseLowPass (const juce::AudioBuffer<float>& in, double sampleRate, double hz)
+    {
+        juce::AudioBuffer<float> out (in);
+        const auto coefficients = juce::IIRCoefficients::makeLowPass (sampleRate, hz);
+
+        for (int c = 0; c < out.getNumChannels(); ++c)
+        {
+            auto* data = out.getWritePointer (c);
+            juce::IIRFilter filter;
+            filter.setCoefficients (coefficients);
+            filter.processSamples (data, out.getNumSamples());
+            std::reverse (data, data + out.getNumSamples());
+            filter.reset();
+            filter.processSamples (data, out.getNumSamples());
+            std::reverse (data, data + out.getNumSamples());
+        }
+
+        return out;
+    }
 
     // Planar resampling with a windowed-sinc interpolator (input zero-padded so the tail is complete).
     juce::AudioBuffer<float> resample (const juce::AudioBuffer<float>& in, int numIn, double fromRate, double toRate, int numOut)
@@ -1705,8 +1727,24 @@ juce::File NeuroMPCProcessor::finishSplitStems()
     const auto folder = separatedDirectory().getChildFile (name + " (stems)");
     folder.createDirectory();
 
+    // Layer 2: Vocals, Drums, Lows and Mids. Lows/Mids are the music without drums and vocals (Bass + Other), split at
+    // 200 Hz with a zero-phase crossover, so Lows + Mids is exactly Bass + Other.
+    auto music = stems[1];
+    for (int c = 0; c < music.getNumChannels(); ++c)
+        music.addFrom (c, 0, stems[2], c, 0, music.getNumSamples());
+    auto lows = zeroPhaseLowPass (music, source->sampleRate, lowsCrossoverHz);
+    auto mids = music;
+    for (int c = 0; c < mids.getNumChannels(); ++c)
+        mids.addFrom (c, 0, lows, c, 0, mids.getNumSamples(), -1.0f);
+
+    std::vector<std::pair<juce::String, const juce::AudioBuffer<float>*>> files;
     for (size_t k = 0; k < stems.size(); ++k)
-        if (! writeWav24 (folder.getChildFile (name + " - " + aiStemNames[k] + ".wav"), stems[k], source->sampleRate))
+        files.emplace_back (aiStemNames[k], &stems[k]);
+    files.emplace_back ("Lows", &lows);
+    files.emplace_back ("Mids", &mids);
+
+    for (const auto& [stemName, buffer] : files)
+        if (! writeWav24 (folder.getChildFile (name + " - " + stemName + ".wav"), *buffer, source->sampleRate))
         {
             setAiState (AiState::failed, "Could not write the stems to " + folder.getFullPathName());
             return {};
@@ -1715,7 +1753,7 @@ juce::File NeuroMPCProcessor::finishSplitStems()
     lastStemsFolder = folder;
     stemSource = source->file;
     const auto cut = (double) source->length() / source->sampleRate > 480.0 ? " (first 8 min)" : "";
-    setAiState (AiState::idle, "Stems split" + juce::String (cut) + ": Drums, Bass, Vocals, Other. Load one from Stems...");
+    setAiState (AiState::idle, "Stems split" + juce::String (cut) + ": Drums, Bass, Vocals, Other + Lows, Mids. Load one from Stems...");
     return folder;
 }
 
@@ -2655,7 +2693,7 @@ bool NeuroMPCProcessor::applyStateTree (juce::ValueTree root)
             const auto t = padTree.getChild (i);
             auto& p = pads[i];
             p.sliceId = t.getProperty ("slice", 0);
-            p.note = juce::jlimit (0, 127, (int) t.getProperty ("note", neuro::PadBank::baseNote + i));
+            p.note = juce::jlimit (0, 127, (int) t.getProperty ("note", (neuro::PadBank::baseNote + i) % 128));
             p.gain = juce::jlimit (0.0f, 4.0f, (float) t.getProperty ("gain", 1.0f));
             p.pitch = juce::jlimit (-24.0f, 24.0f, (float) t.getProperty ("pitch", 0.0f));
             p.chokeGroup = juce::jlimit (0, 16, (int) t.getProperty ("choke", 0));

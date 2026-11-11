@@ -91,7 +91,9 @@ The groove check is only a proxy. A real accuracy figure needs a hand-labelled s
 ## Split stems (AI) (1.6.0)
 - **How:** load a song, then KIT ▸ **Split stems (AI)**. It uses Demucs's general 4-source model (`htdemucs`, MIT) through the same in-process engine.
 - **Model:** the first click downloads it (84 MB, SHA-256 pinned, same pinned repo as the drum model) to `~/Library/Application Support/NEURO MPC/Models`. Then click again to split.
-- **Output:** `~/Music/NEURO MPC/Separated/<name> (stems)/<name> - Drums.wav`, `- Bass.wav`, `- Vocals.wav` and `- Other.wav`, all the same length and start, ready to drag into Logic or Live. The song stays loaded.
+- **Output:** `~/Music/NEURO MPC/Separated/<name> (stems)/`, all the same length and start, ready to drag into Logic or Live. The song stays loaded.
+  - **Layer 1:** `<name> - Drums.wav`, `- Bass.wav`, `- Vocals.wav`, `- Other.wav`.
+  - **Layer 2:** **Vocals**, **Drums**, `- Lows.wav` and `- Mids.wav`. Lows and Mids are the music without drums and vocals (Bass + Other), split at 200 Hz with a zero-phase crossover, so Lows + Mids is exactly Bass + Other (tested: max error 1.2e-7). The test bass line comes out in Lows at 24 dB SDR.
 - **Load a stem:** **Stems...** lists the last stems: load any one (to slice it, chop it or put it on pads), go back to the original song, or show the folder in Finder.
 - **Length:** the first 8 minutes (four stereo stems of a longer song would need several GB of memory).
 - **Speed:** about the same as Extract drums: roughly 4× real time per thread, split across cores for songs over 20 s. Clicking again cancels.
@@ -105,7 +107,7 @@ The groove check is only a proxy. A real accuracy figure needs a hand-labelled s
   |---|---|---|---|---|---|---|---|---|---|
   | Drum | Kick | Snare | Closed Hat | Open Hat | Toms | Crash | Ride | Perc | Tonal |
 
-- Every other hit goes on banks B–D, named and coloured. **Kit → pads** re-applies this at any time.
+- Every other hit goes on banks B–H, named and coloured. **Kit → pads** re-applies this at any time.
 - MPK mini / MPC pads play them through the normal pad notes (A1 = C1).
 
 **Stems for Logic and Live:**

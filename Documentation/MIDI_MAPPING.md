@@ -15,7 +15,7 @@ All **182** buttons, sliders and selectors in the editor can be mapped to a MIDI
 | Host parameter (knob/slider) | sets the value from the velocity | sets the value (0–127 across the range) |
 | On/off parameter | toggles | ≥ 64 = on |
 | Choice parameter | steps to the next choice | selects by position |
-| Pad bank button A–D | selects that bank | ≥ 64 selects it |
+| Pad bank button A–H | selects that bank | ≥ 64 selects it |
 | Action button (Reverse, Mutate, Undo, tabs…) | fires | fires when rising past 64 |
 | Other slider (pattern length, stretch, step velocity…) | n/a | sets the value (respects the slider's skew) |
 | Other selector | steps to the next item | selects by position |
@@ -26,7 +26,7 @@ All **182** buttons, sliders and selectors in the editor can be mapped to a MIDI
 - **Saving:** mappings are saved with the project, with the learned learn-channel (or any channel).
 
 ## Hardware pads and pad banks
-- **"Hardware pads follow the selected bank"** (MIDI menu, on by default): hardware pad *n* plays NEURO pad *n* of the selected bank (A–D), by position, like MPC pads. Map the **A/B/C/D bank buttons** to spare pads or buttons to switch banks from the controller.
+- **"Hardware pads follow the selected bank"** (MIDI menu, on by default): hardware pad *n* plays NEURO pad *n* of the selected bank (A–H), by position, like MPC pads. Map the **A–H bank buttons** to spare pads or buttons to switch banks from the controller.
 - **Pad layout:** NEURO needs to know which notes your pads send.
   - **MIDI ▸ Learn hardware pad layout:** hit your 16 pads in NEURO pad order (bottom-left = 1, left to right, bottom row first). Switch the controller's own pad bank for 9–16. The layout is saved with the project.
   - The default layout is notes 36–51.

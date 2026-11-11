@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.0 (2026-11-11): 128 slices, stem layer 2
+- **Up to 128 slices, all playable:** 8 pad banks (**A–H**, 128 pads); Grid and Chop offer **128 slices**. Pads A1 upwards keep notes 36–127, the last 36 pads use notes 0–35, so every slice has its own MIDI note. REPEAT, Lock and the rate moved under the pads.
+- **Stem layer 2:** Split stems also writes **Lows** and **Mids** (the music without drums and vocals, split at 200 Hz, zero-phase), so you get Vocals / Mids / Lows / Drums as well as Drums / Bass / Vocals / Other.
+- **Note:** the Pad Bank parameter now has 8 choices; existing host automation of the bank parameter may need redrawing.
+
 ## 1.6.0 (2026-11-11): Stem splitting
 - **Split stems (AI)** (KIT tab): splits a song into **Drums, Bass, Vocals and Other** WAVs (Demucs 4-source model, in-process, 84 MB download, SHA-256 pinned). Saved in `~/Music/NEURO MPC/Separated/<name> (stems)/`, ready to drag into Logic or Live.
 - **Stems...** (was Show stems): load any stem to slice, chop or play on pads; go back to the original song; or show the folder in Finder.

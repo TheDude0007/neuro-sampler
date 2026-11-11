@@ -189,7 +189,8 @@ public:
     static juce::File getDrumModelFile();
     static bool isDrumModelInstalled() { return getDrumModelFile().existsAsFile(); }
     // Split stems (AI, Demucs htdemucs 4-source, 84 MB): Drums, Bass, Vocals and Other WAVs of the loaded song (first
-    // 8 min) in ~/Music/NEURO MPC/Separated/<name> (stems)/. The loaded sample stays; any stem loads from Stems...
+    // 8 min) in ~/Music/NEURO MPC/Separated/<name> (stems)/, plus layer 2: Lows and Mids (the music without drums and
+    // vocals, split at 200 Hz; Lows + Mids = Bass + Other). The loaded sample stays; any stem loads from Stems...
     static juce::File getStemModelFile();
     static bool isStemModelInstalled() { return getStemModelFile().existsAsFile(); }
     void downloadStemModel();                   // async, like downloadDrumModel

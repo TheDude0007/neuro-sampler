@@ -9,7 +9,7 @@ None of Akai's UI, artwork or code is used.
 ## CHOP tab
 | Control | What it does |
 |---|---|
-| **Chop mode** | **Transients** (a slice per hit, sensitivity), **Grid** (4–64 equal slices), **Kit** (recognise the drums and put them on pads: A1 Kick, A2 Snare, A3 Closed Hat …), **Manual** (one slice; double-click to chop) |
+| **Chop mode** | **Transients** (a slice per hit, sensitivity), **Grid** (4–128 equal slices), **Kit** (recognise the drums and put them on pads: A1 Kick, A2 Snare, A3 Closed Hat …), **Manual** (one slice; double-click to chop) |
 | **Chop** | Apply the mode |
 | **Snap to hits** | *Magnetic chop:* new and dragged markers snap to the nearest hit within 12 px |
 | **Slices → pads** / **Kit → pads** | Pads follow the slices (slice 1 = A1…) / one of each drum on bank A in MPC order |
@@ -29,7 +29,7 @@ None of Akai's UI, artwork or code is used.
   | **Space** | play the selected slice |
 
 ## Note Repeat
-- **REPEAT** (next to the A–D bank buttons): hold it and play pads, which retrigger at the rate.
+- **REPEAT** (under the pads): hold it and play pads, which retrigger at the rate.
 - **Lock:** keeps Note Repeat on.
 - **Rate box:** **1 bar, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, 1/32T, 1/64, 1/64T, 1/128**.
 - **Gate** (CHOP tab): the length of each hit, 1–100 %.

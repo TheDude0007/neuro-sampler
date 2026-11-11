@@ -1,7 +1,7 @@
 # Pads (Phase 9)
 
 ## Model: `Source/Core/PadBank.h`
-- **Banks:** 64 pads in banks A–D of 16. Default notes are 36–99 (pad A1 = C1, the MPC convention).
+- **Banks:** 128 pads in banks A–H of 16, so up to 128 slices are all playable. Default notes: pad A1 = C1 (36, the MPC convention) upwards to 127; the last 36 pads (G13–H16) wrap to notes 0–35, so every pad has its own note.
 - **Per pad:**
   - the slice reference, by **stable slice id**, so renaming or editing other slices never re-points a pad;
   - a MIDI note;
@@ -19,7 +19,7 @@
 Pads play the keyboard slice chromatically, upwards from its root (pad n = root + n within the bank).
 
 ## UI
-Bank buttons A–D sit above the 4×4 grid. Clicking a pad auditions it, selects it, selects its slice in the waveform, and opens the **PAD** panel. Clicking the waveform returns to the **SLICE** panel. Pads show bank/number, name (or slice), note and colour, and light up while their slice plays.
+Bank buttons A–H sit above the 4×4 grid; REPEAT, Lock and the repeat rate sit below it. Clicking a pad auditions it, selects it, selects its slice in the waveform, and opens the **PAD** panel. Clicking the waveform returns to the **SLICE** panel. Pads show bank/number, name (or slice), note and colour, and light up while their slice plays.
 
 ## Tests (`neuro_core_tests` padTests; `neuro_engine_tests` Phase 9 block)
 - **Mapping:** follow and auto-assign, assignment by id surviving a split, copy/duplicate/clear, and the velocity curve.

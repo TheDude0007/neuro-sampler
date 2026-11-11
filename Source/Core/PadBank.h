@@ -26,10 +26,12 @@ struct PadDefinition : PadPlay
     uint32_t colour = 0xff2a2f3a;
 };
 
-inline constexpr int padsPerBank = 16, numBanks = 4, numPads = padsPerBank * numBanks;
+inline constexpr int padsPerBank = 16, numBanks = 8, numPads = padsPerBank * numBanks;
 using PadMap = std::array<PadPlay, numPads>;
 
-// 64 pads (banks A-D). Pads reference slices by id, so slice edits never silently re-point a pad.
+// 128 pads (banks A-H), so up to 128 slices are all playable. Pads reference slices by id, so slice edits never
+// silently re-point a pad. Default notes: A1 = C1 (36) upwards; pads past G12 (note 127) wrap to notes 0-35, so every
+// pad has its own MIDI note.
 // followSlices: pad n tracks slice n (re-applied on every slice edit) until a pad is assigned by hand.
 class PadBank
 {
@@ -39,7 +41,7 @@ public:
     PadBank()
     {
         for (int i = 0; i < numPads; ++i)
-            pads[(size_t) i].note = baseNote + i;
+            pads[(size_t) i].note = (baseNote + i) % 128;
     }
 
     bool followSlices = true;

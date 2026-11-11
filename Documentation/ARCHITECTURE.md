@@ -7,7 +7,7 @@
   │ SliceSet (ids, regions, stretch, pitch, root)  ─ RtShared ─▶ slices                                         │
   │ StretchBank  ◀─ BackgroundWorker (Signalsmith renders)     ─▶ stretch/keep-length renders                  │
   │ Analysis     ◀─ BackgroundWorker (YIN pitch, chroma key)  │ │                                              │
-  │ PadBank (64 pads)              ─ RtShared ──────────────────▶ PadMap                                       │
+  │ PadBank (128 pads)              ─ RtShared ──────────────────▶ PadMap                                       │
   │ ArpProgram (pattern + grammar) ─ RtShared ──────────────────▶ Arpeggiator (held notes, decisions, NoteTracker)│
   │ SeqBank (16 patterns) + undo   ─ RtShared ──────────────────▶ Sequencer (stateless timing, NoteTracker)     │
   │ UI notes                       ─ lock-free FIFO ────────────▶ event list (MIDI + UI + arp + seq, sorted)     │
@@ -42,7 +42,7 @@
 | `TransientDetector` | energy-flux onsets |
 | `PitchDetector` / `KeyDetector` | YIN + polyphony check / chroma + Krumhansl–Kessler |
 | `Scales` | scale masks, snapping, the 12-note selector maths |
-| `PadBank` | 64 pads, follow-slices, layering data |
+| `PadBank` | 128 pads (banks A–H), follow-slices, layering data |
 | `NoteTracker` | sample-scheduled note-offs shared by arp and sequencer |
 | `Arpeggiator` | directions, rhythm, grammar, phrase memory, humanise |
 | `Sequencer` | lanes, conditions, weaving, stateless timing |
