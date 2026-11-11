@@ -9,7 +9,7 @@ about: Something does not work as documented
 1.
 
 **Environment**
-- NEURO MPC version / commit:
+- Neuro Sampler Suite version / commit:
 - Host and version (Live, Logic, Standalone…), plugin format (VST3 / AU):
 - macOS version, Mac model:
 - Sample rate and buffer size:

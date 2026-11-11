@@ -63,7 +63,7 @@ struct SeqLane
     int drumClass = -1;        // kit piece this lane represents (timbre targets stay within it); -1 = any
     int length = 16;           // steps; lanes may differ (polymeter)
     bool mute = false;
-    int output = 0;            // 0 = sampler, 1 = MIDI out, 2 = both (MIDI out: plugin MIDI output + "NEURO MPC" port)
+    int output = 0;            // 0 = sampler, 1 = MIDI out, 2 = both (MIDI out: plugin MIDI output + "Neuro Sampler Suite" port)
     int midiChannel = 1;       // 1..16, for MIDI out (e.g. GW-1)
     std::string name;
     std::array<SeqStep, maxSteps> steps {};

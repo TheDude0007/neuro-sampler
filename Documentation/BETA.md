@@ -1,4 +1,4 @@
-# NEURO MPC beta test (about 15 minutes)
+# Neuro Sampler Suite beta test (about 15 minutes)
 
 Thanks for testing. Things will break; telling us what broke is the whole point.
 
@@ -6,12 +6,12 @@ Thanks for testing. Things will break; telling us what broke is the whole point.
 
 ## Install
 1. Download the zip from [Releases](https://github.com/TheDude0007/neuro-mpc/releases/latest) and unzip it.
-2. Copy `NEURO MPC.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and `NEURO MPC.component` to `~/Library/Audio/Plug-Ins/Components/`. In Finder, press Shift-Cmd-G and paste the path.
+2. Copy `Neuro Sampler Suite.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and `Neuro Sampler Suite.component` to `~/Library/Audio/Plug-Ins/Components/`. In Finder, press Shift-Cmd-G and paste the path.
 3. The build isn't notarized yet, so macOS blocks it until you run this once in Terminal:
    ```
-   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"NEURO MPC.vst3" ~/Library/Audio/Plug-Ins/Components/"NEURO MPC.component"
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Neuro Sampler Suite.vst3" ~/Library/Audio/Plug-Ins/Components/"Neuro Sampler Suite.component"
    ```
-4. Restart your DAW. In Logic, add it as a stereo instrument: AU Instruments ▸ NEURO MPC.
+4. Restart your DAW. In Logic, add it as a stereo instrument: AU Instruments ▸ Neuro Sampler Suite.
 
 ## Try these
 1. **Chop a drum loop.** Click Load, pick a drum loop, open the **CHOP** tab, choose *Chop: kit*, click **Chop**. Do pads A1, A2 and A3 play the kick, snare and hat?

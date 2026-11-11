@@ -134,7 +134,7 @@ namespace
         for (auto* format : formats.getFormats())
         {
             if (format->getName() != formatName) continue;
-            const auto location = formatName == "VST3" ? juce::File ("~/Library/Audio/Plug-Ins/VST3/NEURO MPC.vst3").getFullPathName()
+            const auto location = formatName == "VST3" ? juce::File ("~/Library/Audio/Plug-Ins/VST3/Neuro Sampler Suite.vst3").getFullPathName()
                                                        : juce::String ("AudioUnit:Synths/aumu,Nm26,Nrmp");
             format->findAllTypesForFile (found, location);
         }

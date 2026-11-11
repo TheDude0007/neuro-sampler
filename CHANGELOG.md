@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0 (2026-11-10): Now called Neuro Sampler Suite
+- **New name:** NEURO MPC is now **Neuro Sampler Suite** (plugin, app, virtual MIDI port and title). The manufacturer shows as **Neuro**.
+- **Nothing breaks:** same plugin codes, so existing Logic, Live and MPC projects load it. Presets, stems and the AI model stay in their existing `NEURO MPC` folders.
+- **Upgrading:** delete the old `NEURO MPC` plugin files and app (see README). In GW-1, KAOSS NEXUS or other apps, pick **Neuro Sampler Suite** as the MIDI input.
+
 ## 1.3.0 (2026-11-06): Skins
 - **Three looks that follow what you're doing** (Skin box: auto, or pick one):
   - **NEON 2K5** (sampling: SLICE, CHOP, KIT): neon yellow underlit controls, chasing disco-purple edge lights.

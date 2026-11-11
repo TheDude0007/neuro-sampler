@@ -1,10 +1,10 @@
-# Running NEURO MPC with an MPC
+# Running Neuro Sampler Suite with an MPC
 
-NEURO MPC runs in unison with Akai MPC 3 (desktop software, as a plugin) and with MPC hardware (over MIDI clock).
+Neuro Sampler Suite runs in unison with Akai MPC 3 (desktop software, as a plugin) and with MPC hardware (over MIDI clock).
 
 ## 1. Inside MPC 3 software (plugin)
 1. Install the AU/VST3 (see the README), open MPC 3, and let it rescan plugins (Preferences ▸ Plugins).
-2. Create a **Plugin** program and pick **NEURO MPC** (AU or VST3).
+2. Create a **Plugin** program and pick **Neuro Sampler Suite** (AU or VST3).
 3. NEURO follows the MPC's tempo, transport and song position through the host: set **SEQ ▸ Seq: host transport** (or Arp / LFO sync) and press Play on the MPC.
 
 ## 2. With MPC hardware or another app (MIDI clock)
@@ -31,7 +31,7 @@ Use the **Standalone** app (no host transport) and connect the MPC by USB or DIN
 - MIDI clock carries no tempo map: NEURO follows tempo changes as the ticks change, with the usual MIDI-clock lag of a few ticks.
 
 ## Manual test checklist (MPC 3)
-- [ ] NEURO MPC appears in the MPC 3 plugin list (AU and VST3) and opens its editor.
+- [ ] Neuro Sampler Suite appears in the MPC 3 plugin list (AU and VST3) and opens its editor.
 - [ ] Play in MPC 3: SEQ (host transport) starts on the MPC's bar 1 and stays in time for 5 minutes at 90 and 140 BPM.
 - [ ] Loop a 2-bar region in MPC 3: NEURO jumps back with it and plays no stray notes.
 - [ ] Tempo change in MPC 3 while playing: NEURO follows.

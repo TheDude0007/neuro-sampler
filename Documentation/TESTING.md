@@ -33,5 +33,5 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## Manual (cannot be automated here)
 - **Ableton Live (VST3) and Logic Pro (AU):** discovery, playback, automation record/playback, project reopen, transport, bypass, long sessions.
-- **pluginval** for the VST3 (`pluginval --strictness-level 5 --validate "NEURO MPC.vst3"`).
+- **pluginval** for the VST3 (`pluginval --strictness-level 5 --validate "Neuro Sampler Suite.vst3"`).
 - **Listening tests:** stretch artefacts on real material, and UI usability.

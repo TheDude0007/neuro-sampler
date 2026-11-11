@@ -107,7 +107,7 @@ The groove check is only a proxy. A real accuracy figure needs a hand-labelled s
 **Separate outputs:**
 - Off by default: everything plays on the main output.
 - **Drum outputs** on: each drum plays on its own output.
-- **Logic:** insert NEURO MPC as **Multi-Output**, then click **+** on its channel strip to add the aux channels.
+- **Logic:** insert Neuro Sampler Suite as **Multi-Output**, then click **+** on its channel strip to add the aux channels.
 - **Live:** use the track's output choosers for the extra outputs.
 
 ## Limitations

@@ -378,7 +378,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     kitToPads.onClick = [this] { kitInfo.setText (juce::String (proc.assignKitToPads()) + " pads assigned (bank A = one of each drum)", juce::dontSendNotification); };
     attachButton (drumOutputs, ParamIDs::drumOutputs);
     drumOutputs.setTooltip ("Off: everything on the main output. On: each drum on its own output (Kick, Snare, ...). In Logic, load "
-                            "NEURO MPC as Multi-Output and click + on the instrument channel to add the aux channels");
+                            "Neuro Sampler Suite as Multi-Output and click + on the instrument channel to add the aux channels");
     teachClear.setTooltip ("Forget the taught examples (Separate drums uses its generic drum sounds)");
     teachClear.onClick = [this, taughtText] { proc.clearTaughtDrums(); kitInfo.setText (taughtText(), juce::dontSendNotification); };
 
@@ -470,8 +470,8 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     attachButton (clockIn, ParamIDs::clockIn);
     attachButton (clockOut, ParamIDs::clockOut);
     attachButton (linkPort, ParamIDs::linkPort);
-    linkPort.setTooltip ("Open the virtual MIDI port 'NEURO MPC': MIDI-out lanes and clock for GW-1, KAOSS NEXUS or any app "
-                         "(select 'NEURO MPC' as their MIDI input)");
+    linkPort.setTooltip ("Open the virtual MIDI port 'Neuro Sampler Suite': MIDI-out lanes and clock for GW-1, KAOSS NEXUS or any app "
+                         "(select 'Neuro Sampler Suite' as their MIDI input)");
     clockIn.setTooltip ("Follow MIDI clock (e.g. an MPC as master) when the host transport is not playing: Seq 'host transport', "
                         "arp and LFO sync then run in unison with it, Start / Stop / Song Position included");
     clockOut.setTooltip ("Send MIDI clock (24 PPQN + Start / Stop) from NEURO's transport, so an MPC set to sync to MIDI clock follows "
@@ -719,7 +719,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     laneOut.addItem ("Out: sampler", 1);
     for (int c = 1; c <= 16; ++c) laneOut.addItem ("Out: MIDI ch " + juce::String (c), 1 + c);
     for (int c = 1; c <= 16; ++c) laneOut.addItem ("Out: sampler + MIDI ch " + juce::String (c), 17 + c);
-    laneOut.setTooltip ("Where this lane plays: the sampler, MIDI out (plugin MIDI output and the 'NEURO MPC' port, e.g. to GW-1), or both");
+    laneOut.setTooltip ("Where this lane plays: the sampler, MIDI out (plugin MIDI output and the 'Neuro Sampler Suite' port, e.g. to GW-1), or both");
     laneOut.onChange = [this]
     {
         const auto id = laneOut.getSelectedId();
@@ -2156,13 +2156,13 @@ void NeuroMPCEditor::paint (juce::Graphics& g)
     if (! t.metal)
     {
         g.setColour (t.glow.withAlpha (0.35f));
-        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-        g.drawText ("NEURO MPC", titleArea.translated (0, 1), juce::Justification::centredRight);
+        g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+        g.drawFittedText ("NEURO SAMPLER SUITE", titleArea.translated (0, 1), juce::Justification::centredRight, 1, 0.7f);
     }
 
     g.setColour (t.metal ? t.onText : t.accent);
-    g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-    g.drawText ("NEURO MPC", titleArea, juce::Justification::centredRight);
+    g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    g.drawFittedText ("NEURO SAMPLER SUITE", titleArea, juce::Justification::centredRight, 1, 0.7f);
 }
 
 // Light lining the board and spilling inwards, in the 10 px margin around everything. NEON: chasing disco lights.

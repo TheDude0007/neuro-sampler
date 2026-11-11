@@ -114,7 +114,7 @@ public:
 
     static constexpr int stateVersion = 2;
     juce::ValueTree createStateTree() const;
-    bool applyStateTree (juce::ValueTree);         // false if the tree is not a NEURO MPC state
+    bool applyStateTree (juce::ValueTree);         // false if the tree is not a Neuro Sampler Suite state
     bool wasLoadedFromNewerVersion() const noexcept { return loadedNewerVersion; }
 
     // Missing samples: the saved slice layout is kept until the file is relinked.
@@ -253,7 +253,7 @@ public:
     void stopAudition (int tag);
 
     void processBackgroundResults();            // also driven by the internal timer, so it works with the editor closed
-    void updateLinkPort();                      // opens/closes the "NEURO MPC" virtual MIDI port to follow its parameter
+    void updateLinkPort();                      // opens/closes the "Neuro Sampler Suite" virtual MIDI port to follow its parameter
     juce::String getLinkPortName() const { return linkPortOut.getName(); }
     bool waitForBackgroundWork (int timeoutMs); // for tests and offline use
 

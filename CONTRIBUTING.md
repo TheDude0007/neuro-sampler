@@ -1,4 +1,4 @@
-# Contributing to NEURO MPC
+# Contributing to Neuro Sampler Suite
 
 Thanks for helping. Two principles shape this project: **audio code must be real-time safe**, and **nothing is claimed that isn't tested**.
 

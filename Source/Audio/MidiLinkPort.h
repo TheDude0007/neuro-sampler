@@ -7,7 +7,7 @@
 namespace neuro
 {
 
-// Virtual CoreMIDI source "NEURO MPC" (then "NEURO MPC 2", ...) that other apps and plug-ins (GW-1, KAOSS NEXUS, a DAW
+// Virtual CoreMIDI source "Neuro Sampler Suite" (then "Neuro Sampler Suite 2", ...) that other apps and plug-ins (GW-1, KAOSS NEXUS, a DAW
 // track, an MPC) can listen to: sequencer MIDI-out lanes and MIDI clock. The audio thread only pushes time-stamped
 // messages into a lock-free FIFO; a 1 ms timer thread sends each one when its time comes, so the audio thread never
 // touches CoreMIDI.
@@ -22,7 +22,7 @@ public:
             return true;
 
         const auto n = ++openPorts;
-        portName = n == 1 ? juce::String ("NEURO MPC") : "NEURO MPC " + juce::String (n);
+        portName = n == 1 ? juce::String ("Neuro Sampler Suite") : "Neuro Sampler Suite " + juce::String (n);
         output = juce::MidiOutput::createNewDevice (portName);
 
         if (output == nullptr)

@@ -243,7 +243,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
                 // standalone), and/or send clock (24 PPQN + Start/Stop) from NEURO's transport.
                 std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::clockIn, 1 }, "Follow MIDI Clock", true),
                 std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::clockOut, 1 }, "Send MIDI Clock", false),
-                // Virtual MIDI source "NEURO MPC": MIDI-out lanes and clock for GW-1, KAOSS NEXUS, other apps.
+                // Virtual MIDI source "Neuro Sampler Suite": MIDI-out lanes and clock for GW-1, KAOSS NEXUS, other apps.
                 std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::linkPort, 1 }, "MIDI Link Port", false),
                 // Off: everything plays on the main output. On: each drum class on its own output (Kick, Snare, ...).
                 std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::drumOutputs, 1 }, "Separate Drum Outputs", false),
@@ -736,7 +736,7 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     renderWithModulation (outs, pos, numSamples);
 
-    // MIDI out (plugin output + "NEURO MPC" port): MIDI-out lanes and NEURO's clock; incoming MIDI is not echoed. The
+    // MIDI out (plugin output + "Neuro Sampler Suite" port): MIDI-out lanes and NEURO's clock; incoming MIDI is not echoed. The
     // clock follows whichever transport drives NEURO: host, MIDI clock in (then it is a thru), or the free-running seq.
     midi.clear();
     {
@@ -2626,7 +2626,7 @@ juce::File NeuroMPCProcessor::getPresetDirectory() const
 {
     return presetDirectory != juce::File() ? presetDirectory
                                            : juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                                                 .getChildFile ("Library/Audio/Presets/NEURO MPC/NEURO MPC");
+                                                 .getChildFile ("Library/Audio/Presets/NEURO MPC/NEURO MPC"); // pre-1.4 name kept: existing presets stay found
 }
 
 juce::Array<juce::File> NeuroMPCProcessor::getPresets() const

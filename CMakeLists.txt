@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Target architectures")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(NEURO_MPC VERSION 1.3.0 LANGUAGES C CXX)
+project(NEURO_MPC VERSION 1.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,12 +40,12 @@ target_compile_options(neuro_demucs PRIVATE -w -O3 -ffp-contract=fast)
 set_target_properties(neuro_demucs PROPERTIES XCODE_ATTRIBUTE_GCC_OPTIMIZATION_LEVEL 3) # also optimised in Debug: Eigen is unusable at -O0
 
 juce_add_plugin(NEURO_MPC
-    COMPANY_NAME "NEURO MPC"
+    COMPANY_NAME "Neuro"
     BUNDLE_ID "org.neurompc.neurompc"
     PLUGIN_MANUFACTURER_CODE Nrmp
     PLUGIN_CODE Nm26
     FORMATS VST3 AU Standalone
-    PRODUCT_NAME "NEURO MPC"
+    PRODUCT_NAME "Neuro Sampler Suite"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
@@ -99,7 +99,7 @@ target_sources(neuro_engine_tests PRIVATE
     Source/UI/WaveformView.cpp)
 target_include_directories(neuro_engine_tests PRIVATE Source)
 target_compile_definitions(neuro_engine_tests PRIVATE
-    JucePlugin_Name="NEURO MPC"
+    JucePlugin_Name="Neuro Sampler Suite"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0)
 target_link_libraries(neuro_engine_tests PRIVATE
@@ -124,7 +124,7 @@ target_sources(neuro_field_test PRIVATE
     Source/UI/WaveformView.cpp)
 target_include_directories(neuro_field_test PRIVATE Source)
 target_compile_definitions(neuro_field_test PRIVATE
-    JucePlugin_Name="NEURO MPC"
+    JucePlugin_Name="Neuro Sampler Suite"
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_WEB_BROWSER=0

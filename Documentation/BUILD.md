@@ -1,4 +1,4 @@
-# Building NEURO MPC
+# Building Neuro Sampler Suite
 
 ## Requirements (tested)
 - macOS 26 on Apple Silicon (arm64); deployment target macOS 11
@@ -16,9 +16,9 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 **Outputs** (also copied to `~/Library/Audio/Plug-Ins/{VST3,Components}` after the build):
-- `build/NEURO_MPC_artefacts/Release/VST3/NEURO MPC.vst3`
-- `build/NEURO_MPC_artefacts/Release/AU/NEURO MPC.component`
-- `build/NEURO_MPC_artefacts/Release/Standalone/NEURO MPC.app`
+- `build/NEURO_MPC_artefacts/Release/VST3/Neuro Sampler Suite.vst3`
+- `build/NEURO_MPC_artefacts/Release/AU/Neuro Sampler Suite.component`
+- `build/NEURO_MPC_artefacts/Release/Standalone/Neuro Sampler Suite.app`
 
 **Validate the AU:** `killall -9 AudioComponentRegistrar; auval -v aumu Nm26 Nrmp`
 

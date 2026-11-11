@@ -1,6 +1,6 @@
 # Sprint: public MVP (v1.0.0)
 
-Goal: NEURO MPC is ready to share publicly (AGPL-3.0, open source): AI drum extraction for full songs, tight sync with
+Goal: Neuro Sampler Suite is ready to share publicly (AGPL-3.0, open source): AI drum extraction for full songs, tight sync with
 MPC 3 (as a plugin) and MPC hardware (over MIDI clock), and release-grade packaging.
 
 | # | Story | Acceptance criteria |

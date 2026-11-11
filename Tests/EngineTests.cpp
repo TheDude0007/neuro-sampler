@@ -1129,7 +1129,7 @@ int main()
         }
 
         // Lanes to MIDI out (e.g. GW-1): MIDI-only lanes are silent in the sampler and send note on/off on their channel
-        // at the step's exact sample; "both" lanes do both. Then the same through the real "NEURO MPC" virtual port.
+        // at the step's exact sample; "both" lanes do both. Then the same through the real "Neuro Sampler Suite" virtual port.
         {
             auto runFree = [&] (int blocks, std::vector<std::pair<int64_t, juce::MidiMessage>>* out, std::vector<float>* audio, bool realTime)
             {
@@ -1170,7 +1170,7 @@ int main()
             // Real virtual port, received by a separate MIDI input (as GW-1 / KAOSS NEXUS would). Needs a live CoreMIDI
             // server: skipped on CI runners.
             if (std::getenv ("CI") != nullptr)
-                std::printf ("  'NEURO MPC' port: skipped on CI (no CoreMIDI session)\n");
+                std::printf ("  'Neuro Sampler Suite' port: skipped on CI (no CoreMIDI session)\n");
             else
             {
             struct Receiver : juce::MidiInputCallback
@@ -1198,7 +1198,7 @@ int main()
                 juce::Thread::sleep (100);
                 input->stop();
             }
-            std::printf ("  'NEURO MPC' port -> MIDI input: %d note-ons, %d clock ticks\n", receiver.notes.load(), receiver.ticks.load());
+            std::printf ("  'Neuro Sampler Suite' port -> MIDI input: %d note-ons, %d clock ticks\n", receiver.notes.load(), receiver.ticks.load());
             CHECK (receiver.notes == 3 && receiver.ticks >= 45);
             setParam (hs, ParamIDs::linkPort, 0.0f);
             setParam (hs, ParamIDs::clockOut, 0.0f);
