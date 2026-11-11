@@ -3,7 +3,7 @@
 An open-source, MPC-style slice sampler for macOS: VST3 (Ableton Live), AU (Logic Pro), and Standalone.
 C++20 · JUCE 9.0.4 (pinned) · CMake · AGPL-3.0.
 
-> **Beta:** testers wanted. Start with the [15-minute test guide](Documentation/BETA.md), then [send feedback](https://github.com/TheDude0007/neuro-mpc/issues/new?template=beta_feedback.yml).
+> **Beta:** testers wanted. Start with the [15-minute test guide](Documentation/BETA.md), then [send feedback](https://github.com/TheDude0007/neuro-sampler/issues/new?template=beta_feedback.yml).
 
 ## Install (macOS, Apple Silicon)
 1. Download `Neuro-Sampler-Suite-<version>-macOS-arm64.zip` from [Releases](../../releases) and unzip it.

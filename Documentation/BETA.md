@@ -5,7 +5,7 @@ Thanks for testing. Things will break; telling us what broke is the whole point.
 **You need:** an Apple Silicon Mac (M1 or newer) and Logic Pro, Ableton Live, or just the standalone app. A MIDI pad controller is nice to have.
 
 ## Install
-1. Download the zip from [Releases](https://github.com/TheDude0007/neuro-mpc/releases/latest) and unzip it.
+1. Download the zip from [Releases](https://github.com/TheDude0007/neuro-sampler/releases/latest) and unzip it.
 2. Copy `Neuro Sampler Suite.vst3` to `~/Library/Audio/Plug-Ins/VST3/` and `Neuro Sampler Suite.component` to `~/Library/Audio/Plug-Ins/Components/`. In Finder, press Shift-Cmd-G and paste the path.
 3. The build isn't notarized yet, so macOS blocks it until you run this once in Terminal:
    ```
@@ -26,4 +26,4 @@ Thanks for testing. Things will break; telling us what broke is the whole point.
 - Playing GW-1 and KAOSS NEXUS together ([setup](GMNI_LINK.md)).
 
 ## Tell us
-[Send feedback here](https://github.com/TheDude0007/neuro-mpc/issues/new?template=beta_feedback.yml). "I got stuck at step 3" is as useful as a crash report.
+[Send feedback here](https://github.com/TheDude0007/neuro-sampler/issues/new?template=beta_feedback.yml). "I got stuck at step 3" is as useful as a crash report.
