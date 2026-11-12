@@ -24,10 +24,12 @@ struct SliceDefinition
     bool preserveTransients = true; // stretch each transient-delimited segment separately (no pre-echo)
     float rootNote = -1.0f;         // manual pitch correction (fractional MIDI note); < 0 means use the detected pitch
     int drumClass = -1;             // manual class override (DrumClass index); -1 = detected
-    // Derived from background analysis (not persisted): class, timbre-map position, detected pitch (-1 = unpitched).
+    // Derived from background analysis (not persisted): class, timbre-map position, detected pitch (-1 = unpitched),
+    // and whether it is musical (a clear note or chord).
     int detectedClass = -1;
     float timbreX = -1.0f, timbreY = -1.0f;
     float detectedRoot = -1.0f;
+    bool detectedHarmonic = false;
 
     int effectiveClass() const noexcept { return drumClass >= 0 ? drumClass : detectedClass; }
     bool reverse = false;
@@ -144,7 +146,7 @@ public:
     }
 
     // Stores analysis results on the slice with this id (if it still covers the analysed region).
-    bool setAnalysis (int id, int64_t start, int64_t end, int cls, float x, float y, float root)
+    bool setAnalysis (int id, int64_t start, int64_t end, int cls, float x, float y, float root, bool harmonic = false)
     {
         const auto i = indexOfId (id);
 
@@ -153,11 +155,13 @@ public:
 
         auto& s = slices[(size_t) i];
         auto differs = [] (float a, float b) { return std::abs (a - b) > 1.0e-6f; };
-        const auto changed = s.detectedClass != cls || differs (s.timbreX, x) || differs (s.timbreY, y) || differs (s.detectedRoot, root);
+        const auto changed = s.detectedClass != cls || differs (s.timbreX, x) || differs (s.timbreY, y) || differs (s.detectedRoot, root)
+                             || s.detectedHarmonic != harmonic;
         s.detectedClass = cls;
         s.timbreX = x;
         s.timbreY = y;
         s.detectedRoot = root;
+        s.detectedHarmonic = harmonic;
         return changed;
     }
 

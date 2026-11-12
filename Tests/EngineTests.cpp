@@ -184,6 +184,31 @@ namespace
         }
     };
 
+    // Chords (MIDI notes, 4 harmonics each) for secondsEach, one after another.
+    juce::File writeChordsWav (const juce::File& file, std::vector<std::vector<double>> chords, double secondsEach)
+    {
+        const auto each = (int) (rate * secondsEach);
+        juce::AudioBuffer<float> buf (1, each * (int) chords.size());
+        buf.clear();
+
+        for (size_t c = 0; c < chords.size(); ++c)
+            for (auto note : chords[c])
+                for (int h = 1; h <= 4; ++h)
+                    for (int i = 0; i < each; ++i)
+                        buf.addSample (0, (int) c * each + i, 0.12f / (float) h
+                                           * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 440.0 * std::exp2 ((note - 69.0) / 12.0) * h * i / rate));
+
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> out (file.createOutputStream().release());
+        auto options = juce::AudioFormatWriterOptions().withSampleRate (rate).withNumChannels (1).withBitsPerSample (24);
+
+        if (auto writer = wav.createWriterFor (out, options))
+            writer->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples());
+
+        return file;
+    }
+
     void setParam (NeuroMPCProcessor& p, const char* id, float value)
     {
         auto* param = p.apvts.getParameter (id);
@@ -825,7 +850,8 @@ int main()
             "arpPhrase", "arpVariation", "arpVaryPitch", "arpVaryVelocity", "arpVaryRhythm", "arpReturn", "arpHumanTime",
             "arpHumanVelocity", "seqMode", "seqPattern", "seqRate", "seqSwing", "seqFill", "weaveAccent", "weaveAccentAmount",
             "weaveFill", "weaveFillEvery", "weavePitch", "padBank", "padBankFollow", "padChannel", "levelKick", "levelSnare",
-            "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2", "levelFloorTom", "levelCrash", "levelRide", "levelPerc", "levelTonal", "chordLock", "chordInput", "chordSplit", "midiClockIn", "midiClockOut", "midiLinkPort", "drumOutputs", "noteRepeat", "repeatRate", "repeatGate", "repeatSwing", "repeatLatch" };
+            "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2", "levelFloorTom", "levelCrash", "levelRide", "levelPerc", "levelTonal", "chordLock", "chordInput", "chordSplit", "midiClockIn", "midiClockOut", "midiLinkPort", "drumOutputs", "noteRepeat", "repeatRate", "repeatGate", "repeatSwing", "repeatLatch",
+            "songKeyLock", "playKey", "keyShiftMode", "keyShiftScope" };
         NeuroMPCProcessor a;
         juce::StringArray ids;
         for (auto* param : a.getParameters())
@@ -1583,6 +1609,89 @@ int main()
         toneFile.deleteFile();
     }
 
+    // ---- v1.8 Song key: set from detection on load (not on restore, not when locked); chords named per slice ----
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+        auto prog = writeChordsWav (tmp.getChildFile ("neuro_key_d.wav"), { { 50, 62, 66, 69 }, { 43, 59, 62, 67 }, { 45, 61, 64, 69 }, { 50, 62, 66, 69 } }, 1.0);
+        NeuroMPCProcessor k;
+        k.prepareToPlay (rate, block);
+        auto root = [&] { return (int) k.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load(); };
+        auto scaleOf = [&] { return (int) k.apvts.getRawParameterValue (ParamIDs::scale)->load(); };
+        CHECK (k.loadSample (prog, error) && k.waitForBackgroundWork (20000));
+        std::printf ("  song key on load (D-G-A-D): %s %s\n", neuro::pitchClassName (root()), neuro::scales[(size_t) scaleOf()].name);
+        CHECK (root() == 2 && scaleOf() == neuro::scaleMajor);
+
+        k.editSlices ([] (auto& set) { set.grid (4); });   // one chord per slice
+        CHECK (k.waitForBackgroundWork (20000));
+        juce::StringArray names;
+        for (int i = 0; i < 4; ++i)
+            if (const auto* a = k.getSliceAnalysis (i))
+                names.add (juce::String (a->chord.name()) + (a->chord.status == neuro::ChordEstimate::Status::chord ? "" : "?"));
+        std::printf ("  slice chords: %s\n", names.joinIntoString (" ").toRawUTF8());
+        CHECK (names.joinIntoString (" ") == "D G A D");
+
+        juce::MemoryBlock saved;
+        setParam (k, ParamIDs::scaleRoot, 5.0f);                  // the user's own key is kept on restore...
+        k.getStateInformation (saved);
+        NeuroMPCProcessor restored;
+        restored.prepareToPlay (rate, block);
+        restored.setStateInformation (saved.getData(), (int) saved.getSize());
+        CHECK (restored.waitForBackgroundWork (20000));
+        CHECK ((int) restored.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load() == 5);
+
+        setParam (k, ParamIDs::songKeyLock, 1.0f);                // ...and on load while locked
+        CHECK (k.loadSample (prog, error) && k.waitForBackgroundWork (20000));
+        CHECK (root() == 5);
+        CHECK (k.applyDetectedKey() && root() == 2);              // Key... > Use detected key ignores the lock
+        prog.deleteFile();
+    }
+
+    // ---- v1.8 Play In: musical slices move from the song key to another key (keep length / resample); drums stay ----
+    {
+        auto toneFile = writeToneWav (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("neuro_playin.wav"), 220.0, 2.0);
+        NeuroMPCProcessor pk;
+        pk.prepareToPlay (rate, block);
+        CHECK (pk.loadSample (toneFile, error));
+        setParam (pk, ParamIDs::attack, 0.0f);
+        CHECK (pk.waitForBackgroundWork (20000));
+        CHECK ((int) pk.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load() == 0); // a single note: no confident key, unchanged
+        auto play = [&] { return capture (pk, 230, { { 1, 36, 1.0f } }); };
+
+        setParam (pk, ParamIDs::scaleRoot, 9.0f);   // song key A
+        setParam (pk, ParamIDs::playKey, 1.0f);     // play in C: +3
+        CHECK (pk.getKeyShift() == 3 && pk.getEffectiveKeyRoot() == 0);
+        pk.processBackgroundResults();
+        CHECK (pk.waitForBackgroundWork (60000));
+        auto x = play();
+        std::printf ("  Play In C (from A), keep length: midi %.2f, %d samples (original 96000)\n", midiOf (x, 4800, 9600), audibleLength (x));
+        CHECK (std::abs (midiOf (x, 4800, 9600) - 60.0) < 0.05 && std::abs (audibleLength (x) - 96000) < 960);
+
+        setParam (pk, ParamIDs::keyShiftMode, 1.0f); // resample
+        pk.processBackgroundResults();
+        x = play();
+        std::printf ("  Play In C, resample: midi %.2f, %d samples\n", midiOf (x, 4800, 9600), audibleLength (x));
+        CHECK (std::abs (midiOf (x, 4800, 9600) - 60.0) < 0.05 && std::abs (audibleLength (x) - 96000 / std::exp2 (3.0 / 12.0)) < 200);
+
+        setParam (pk, ParamIDs::playKey, 8.0f);      // play in G: -2
+        x = play();
+        CHECK (pk.getKeyShift() == -2 && std::abs (midiOf (x, 4800, 9600) - 55.0) < 0.05);
+
+        pk.editSlices ([] (auto& s) { s.setDrumClass (0, (int) neuro::DrumClass::kick); });
+        x = play();                                  // classed as a drum, but a clear note: still musical
+        CHECK (std::abs (midiOf (x, 4800, 9600) - 55.0) < 0.05);
+        setParam (pk, ParamIDs::playKey, 0.0f);      // original
+        x = play();
+        CHECK (pk.getKeyShift() == 0 && std::abs (midiOf (x, 4800, 9600) - 57.0) < 0.05);
+        toneFile.deleteFile();
+
+        // A noise hit classed as a drum stays put; "All slices" moves it too.
+        neuro::SliceDefinition drum;
+        drum.drumClass = (int) neuro::DrumClass::kick;
+        CHECK (! neuro::keyShiftEligible (drum, false) && neuro::keyShiftEligible (drum, true));
+        drum.detectedHarmonic = true;
+        CHECK (neuro::keyShiftEligible (drum, false));
+    }
+
     // ---- Separate drums (NMF): simultaneous hits -> both lanes; isolated stems on their own outputs; stems sum back ----
     {
         juce::AudioBuffer<float> mix (1, (int) rate * 2);   // 1 bar at 120 BPM: kick 1/3, snare 2/4, hats every 8th
@@ -1736,6 +1845,14 @@ int main()
 
                 for (auto* part : { "Drums", "Bass", "Other", "Vocals", "Lows", "Mids" })
                     CHECK (stemFile (part).existsAsFile());
+
+                // The split also reads the song's key from the music without drums; the mix and its stems use it.
+                bool fromStems = false;
+                const auto stemKey = sp.getBestKeyEstimate (&fromStems, true);
+                std::printf ("  stem key: %s %s (%s)\n", stemKey ? neuro::pitchClassName (stemKey->candidates[0].tonic) : "-",
+                             stemKey && stemKey->candidates[0].minor ? "minor" : "major",
+                             stemKey && stemKey->status == neuro::KeyEstimate::Status::key ? "confident" : "best guess");
+                CHECK (stemKey && fromStems);
 
                 juce::AudioBuffer<float> bassOnly (1, song.getNumSamples());
                 for (int i = 0; i < song.getNumSamples(); ++i)

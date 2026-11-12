@@ -123,7 +123,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
                                                              &halfButton, &doubleButton, &resetButton, &allButton,
                                                              &preserveTransients, &pitchInfo, &rootNote,
                                                              &octaveDown, &octaveUp, &semitoneInfo, &fineCents, &pitchMode,
-                                                             &keyMode, &scale, &scaleRoot, &lfoShape, &lfoSync })
+                                                             &keyMode, &scale, &scaleRoot, &lfoShape, &lfoSync, &playKey, &keyMenu })
         addAndMakeVisible (c);
 
     for (int pc = 0; pc < 12; ++pc)
@@ -1065,13 +1065,24 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     for (int pc = 0; pc < 12; ++pc)
         scaleRoot.addItem (neuro::pitchClassName (pc), pc + 1);
 
-    scale.setTooltip ("Keys mode: snap incoming notes to this scale");
+    scale.setTooltip ("Song scale: set from the detected key when you load a sample. Keys mode and the arp snap to it");
+    scaleRoot.setTooltip ("Song key: set from the detected key when you load a sample (Key... > Lock keeps your own)");
+    playKey.addItem ("Play in: original", 1);
+
+    for (int pc = 0; pc < 12; ++pc)
+        playKey.addItem (juce::String ("Play in ") + neuro::pitchClassName (pc), pc + 2);
+
+    playKey.setTooltip ("Move every musical slice from the song key to this key by the smallest shift (keeps length)");
+    keyMenu.setTooltip ("Detected key, Song Key Lock, and how a key change moves slices");
+    keyMenu.onClick = [this] { showKeyMenu(); };
+    keyMenu.setComponentID ("nomap"); // opens a menu; its settings are host parameters (mappable as such)
     lfoShape.addItemList ({ "Sine", "Triangle", "Saw", "Square", "S&H" }, 1);
     lfoSync.addItemList ({ "Free", "1 bar", "1/2", "1/4", "1/8", "1/16" }, 1);
 
     for (auto [box, id] : std::initializer_list<std::pair<juce::ComboBox*, const char*>> {
              { &playMode, ParamIDs::playMode }, { &keyMode, ParamIDs::keyMode }, { &scale, ParamIDs::scale },
-             { &scaleRoot, ParamIDs::scaleRoot }, { &lfoShape, ParamIDs::lfoShape }, { &lfoSync, ParamIDs::lfoSync } })
+             { &scaleRoot, ParamIDs::scaleRoot }, { &lfoShape, ParamIDs::lfoShape }, { &lfoSync, ParamIDs::lfoSync },
+             { &playKey, ParamIDs::playKey } })
         attachCombo (*box, id);
 
     // ---- Presets and relinking ----
@@ -1615,6 +1626,50 @@ void NeuroMPCEditor::filesDropped (const juce::StringArray& files, int, int)
         load (juce::File (files[0]));
 }
 
+void NeuroMPCEditor::showKeyMenu()
+{
+    const auto locked = proc.apvts.getRawParameterValue (ParamIDs::songKeyLock)->load() > 0.5f;
+    const auto resample = proc.apvts.getRawParameterValue (ParamIDs::keyShiftMode)->load() > 0.5f;
+    const auto all = proc.apvts.getRawParameterValue (ParamIDs::keyShiftScope)->load() > 0.5f;
+    bool fromStems = false;
+    const auto best = proc.getBestKeyEstimate (&fromStems, true);
+    juce::PopupMenu m;
+    m.addItem (1, best ? "Use detected key: " + juce::String (neuro::pitchClassName (best->candidates[0].tonic))
+                             + (best->candidates[0].minor ? " minor" : " major") + (fromStems ? " (stems)" : "")
+                             + (best->status == neuro::KeyEstimate::Status::key ? "" : " (best guess)")
+                       : juce::String ("No key detected"),
+               best.has_value());
+    m.addItem (2, "Lock song key (don't set it on load)", true, locked);
+    m.addSeparator();
+    m.addSectionHeader ("Play In: key change");
+    m.addItem (3, "Keep length (time-stretch quality)", true, ! resample);
+    m.addItem (4, "Resample (classic: faster and higher)", true, resample);
+    m.addItem (5, "Move musical slices (skip drums)", true, ! all);
+    m.addItem (6, "Move all slices", true, all);
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (keyMenu), [this] (int result)
+    {
+        auto set = [this] (const char* id, float value)
+        {
+            auto* p = proc.apvts.getParameter (id);
+            p->setValueNotifyingHost (p->convertTo0to1 (value));
+        };
+
+        switch (result)
+        {
+            case 1: proc.applyDetectedKey(); break;
+            case 2: set (ParamIDs::songKeyLock, proc.apvts.getRawParameterValue (ParamIDs::songKeyLock)->load() > 0.5f ? 0.0f : 1.0f); break;
+            case 3: set (ParamIDs::keyShiftMode, 0.0f); break;
+            case 4: set (ParamIDs::keyShiftMode, 1.0f); break;
+            case 5: set (ParamIDs::keyShiftScope, 0.0f); break;
+            case 6: set (ParamIDs::keyShiftScope, 1.0f); break;
+            default: break;
+        }
+
+        updateInfo();
+    });
+}
+
 void NeuroMPCEditor::updateInfo()
 {
     juce::String text;
@@ -1627,7 +1682,21 @@ void NeuroMPCEditor::updateInfo()
              << (waveform.getSelectedSlice() >= 0 ? juce::String (waveform.getSelectedSlice() + 1) : juce::String ("-"));
 
     if (const auto* a = proc.getSampleAnalysis())
-        text << "\nSample pitch: " << describePitch (a->pitch) << "\nKey: " << describeKey (a->key);
+    {
+        bool fromStems = false;
+        const auto best = proc.getBestKeyEstimate (&fromStems);
+        text << "\nSample pitch: " << describePitch (a->pitch) << "\nKey: " << (fromStems ? describeKey (*best) + " (from stems)" : describeKey (a->key));
+
+        const auto root = (int) proc.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load();
+        const auto scaleIndex = juce::jlimit (0, (int) neuro::scales.size() - 1, (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load());
+        text << "\nSong key: " << neuro::pitchClassName (root) << " " << neuro::scales[(size_t) scaleIndex].name;
+
+        if (proc.apvts.getRawParameterValue (ParamIDs::songKeyLock)->load() > 0.5f)
+            text << " (locked)";
+
+        if (const auto shift = proc.getKeyShift(); shift != 0)
+            text << "  >  playing in " << neuro::pitchClassName (proc.getEffectiveKeyRoot()) << " (" << (shift > 0 ? "+" : "") << shift << " st)";
+    }
     else if (proc.getSample() != nullptr)
         text << "\nAnalysing...";
     else
@@ -2066,8 +2135,15 @@ void NeuroMPCEditor::updateSlicePanel()
     pitchMode.setSelectedId (slice.pitchMode == neuro::PitchMode::keepLength ? 2 : 1, juce::dontSendNotification);
 
     const auto* analysis = proc.getSliceAnalysis (sel);
-    pitchInfo.setText ("Pitch: " + (analysis != nullptr ? describePitch (analysis->pitch) : juce::String ("analysing...")),
-                       juce::dontSendNotification);
+    auto pitchText = "Pitch: " + (analysis != nullptr ? describePitch (analysis->pitch) : juce::String ("analysing..."));
+
+    if (analysis != nullptr && analysis->chord.status != neuro::ChordEstimate::Status::none)
+        pitchText << "  |  Chord: " << analysis->chord.name() << (analysis->chord.status == neuro::ChordEstimate::Status::chord ? "" : "?");
+
+    if (analysis != nullptr && analysis->key.status == neuro::KeyEstimate::Status::key)
+        pitchText << "  |  Key: " << neuro::pitchClassName (analysis->key.candidates[0].tonic) << (analysis->key.candidates[0].minor ? "m" : "");
+
+    pitchInfo.setText (pitchText, juce::dontSendNotification);
     durationInfo.setText (juce::String (original, 3) + " s  ->  " + juce::String (original * slice.timeStretchRatio, 3) + " s   "
                               + (status == NeuroMPCProcessor::StretchStatus::rendering ? "rendering..."
                                  : status == NeuroMPCProcessor::StretchStatus::ready ? "rendered" : "original"),
@@ -2588,7 +2664,8 @@ void NeuroMPCEditor::resized()
     auto selectors = bottom.removeFromTop (24);
     controlDeck = { bottom.getX(), deckTop, bottom.getWidth(), selectors.getBottom() - deckTop };
 
-    for (auto [box, width] : { std::pair { &scale, 140 }, { &scaleRoot, 60 }, { &lfoShape, 100 }, { &lfoSync, 80 } })
+    for (auto [box, width] : std::initializer_list<std::pair<juce::Component*, int>> { { &scaleRoot, 60 }, { &scale, 130 }, { &playKey, 116 },
+                                                                                        { &keyMenu, 60 }, { &lfoShape, 100 }, { &lfoSync, 80 } })
     {
         box->setBounds (selectors.removeFromLeft (width));
         selectors.removeFromLeft (6);

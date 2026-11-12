@@ -7,10 +7,10 @@
 namespace neuro
 {
 
-// 12-bit pitch-class masks relative to the scale root (bit 0 = root).
+// 12-bit pitch-class masks relative to the scale root (bit 0 = root). Append-only: sessions store the index.
 struct Scale { const char* name; uint16_t mask; };
 
-inline constexpr std::array<Scale, 8> scales {{
+inline constexpr std::array<Scale, 13> scales {{
     { "Chromatic",        0b111111111111 },
     { "Major",            0b101010110101 },
     { "Natural minor",    0b010110101101 },
@@ -19,7 +19,21 @@ inline constexpr std::array<Scale, 8> scales {{
     { "Major pentatonic", 0b001010010101 },
     { "Minor pentatonic", 0b010010101001 },
     { "Blues",            0b010011101001 },
+    { "Dorian",           0b011010101101 },
+    { "Phrygian",         0b010110101011 },
+    { "Lydian",           0b101011010101 },
+    { "Mixolydian",       0b011010110101 },
+    { "Locrian",          0b010101101011 },
 }};
+
+inline constexpr int scaleMajor = 1, scaleNaturalMinor = 2;
+
+// Key change: the shift from `fromPc` to `toPc` by the smallest interval, -6 .. +5 semitones.
+inline int keyShiftBetween (int fromPc, int toPc) noexcept
+{
+    const auto d = ((toPc - fromPc) % 12 + 12) % 12;
+    return d > 5 ? d - 12 : d;
+}
 
 inline bool inScale (int note, uint16_t mask, int root) noexcept
 {

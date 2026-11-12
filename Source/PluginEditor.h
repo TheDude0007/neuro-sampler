@@ -146,6 +146,9 @@ private:
     // Global pitch
     juce::Slider transpose, fineTune, bendRange, lfoDepth, lfoRate, lfoPhase;
     juce::ComboBox keyMode, scale, scaleRoot, lfoShape, lfoSync;
+    juce::ComboBox playKey;                   // Play In: move the musical slices to another key
+    juce::TextButton keyMenu { "Key..." };    // detected key, lock, key change mode and scope
+    void showKeyMenu();
     std::vector<std::unique_ptr<juce::Label>> knobLabels;
     std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAttachments;

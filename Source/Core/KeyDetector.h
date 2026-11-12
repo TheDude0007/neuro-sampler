@@ -23,16 +23,22 @@ struct KeyEstimate
     Status status = Status::unavailable;
     std::array<Candidate, 3> candidates {}; // best first; meaningful unless unavailable
     std::array<float, 12> chroma {};        // normalised pitch-class energy
+    std::array<float, 12> bassChroma {};    // C2-B3 only, weighted toward the lowest notes (the bass note of a chord)
     float margin = 0.0f;                    // best minus second-best correlation
 };
 
-// Chroma (Goertzel bank over C2-B7, Hann-windowed frames) correlated against the 24 Krumhansl-Kessler key profiles.
+// Chroma (Goertzel bank over C2-B7, Hann-windowed frames) correlated against the 24 "bgate" key profiles (Faraldo et al.,
+// as published in Essentia). For the key, each note's expected overtones (octave, 12th, 2 octaves, 17th) are partly
+// subtracted first, so a note's 3rd harmonic doesn't pull the key toward its dominant. On labelled real melodies this
+// scored 5/7 against 3/7 for Krumhansl-Kessler on raw chroma (Documentation/PITCH_ANALYSIS.md).
 // Returns uncertain when evidence is weak: low correlation, a near-tie, or too few pitch classes (e.g. a single note).
 inline KeyEstimate detectKey (const float* const* channels, int numChannels, int64_t numSamples, double sampleRate,
                               double maxSeconds = 60.0)
 {
-    static constexpr double major[12] { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
-    static constexpr double minor[12] { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
+    static constexpr double major[12] { 1.00, 0.00, 0.42, 0.00, 0.53, 0.37, 0.00, 0.77, 0.00, 0.38, 0.21, 0.30 };
+    static constexpr double minor[12] { 1.00, 0.00, 0.36, 0.39, 0.00, 0.38, 0.00, 0.74, 0.27, 0.00, 0.42, 0.23 };
+    static constexpr int overtones[4] { 12, 19, 24, 28 };
+    static constexpr double overtoneWeight[4] { 0.3 / 1.0, 0.3 / 1.5, 0.3 / 2.0, 0.3 / 2.5 };
     constexpr double pi = 3.14159265358979323846;
 
     KeyEstimate result;
@@ -51,7 +57,8 @@ inline KeyEstimate detectKey (const float* const* channels, int numChannels, int
     for (int note = 36; note < 108; ++note)
         coeff.push_back (2.0 * std::cos (2.0 * pi * 440.0 * std::pow (2.0, (note - 69) / 12.0) / sampleRate));
 
-    std::array<double, 12> chroma {};
+    std::array<double, 12> chroma {}, bass {}, keyChroma {};
+    std::vector<double> notes (coeff.size());
     int frames = 0;
 
     // Short inputs are analysed as one zero-padded frame.
@@ -87,7 +94,23 @@ inline KeyEstimate detectKey (const float* const* channels, int numChannels, int
                 s1 = s0;
             }
 
-            chroma[(36 + k) % 12] += std::sqrt (std::max (0.0, s1 * s1 + s2 * s2 - coeff[k] * s1 * s2));
+            const auto magnitude = std::sqrt (std::max (0.0, s1 * s1 + s2 * s2 - coeff[k] * s1 * s2));
+            notes[k] = magnitude;
+            chroma[(36 + k) % 12] += magnitude;
+
+            if (k < 24) // C2-B3, weighted toward the lowest notes: the bass note, not a low chord tone
+                bass[(36 + k) % 12] += magnitude * (double) (24 - k) / 24.0;
+        }
+
+        for (size_t k = 0; k < notes.size(); ++k)
+        {
+            auto fundamental = notes[k];
+
+            for (int o = 0; o < 4; ++o)
+                if (k >= (size_t) overtones[o])
+                    fundamental -= overtoneWeight[o] * notes[k - (size_t) overtones[o]];
+
+            keyChroma[(36 + k) % 12] += std::max (0.0, fundamental);
         }
     }
 
@@ -100,6 +123,14 @@ inline KeyEstimate detectKey (const float* const* channels, int numChannels, int
         return result;
 
     int present = 0;
+    double bassTotal = 0.0;
+
+    for (auto b : bass)
+        bassTotal += b;
+
+    for (size_t i = 0; i < 12; ++i)
+        result.bassChroma[i] = bassTotal > 0.0 ? (float) (bass[i] / bassTotal) : 0.0f;
+
 
     for (size_t i = 0; i < 12; ++i)
     {
@@ -107,13 +138,23 @@ inline KeyEstimate detectKey (const float* const* channels, int numChannels, int
         present += result.chroma[i] > 0.05f ? 1 : 0;
     }
 
+    double keyTotal = 0.0;
+
+    for (auto c : keyChroma)
+        keyTotal += c;
+
+    std::array<double, 12> forKey {};
+
+    for (size_t i = 0; i < 12; ++i)
+        forKey[i] = keyTotal > 0.0 ? keyChroma[i] / keyTotal : result.chroma[i];
+
     auto correlate = [&] (const double* profile, int tonic)
     {
         double mx = 0.0, my = 0.0;
 
         for (int i = 0; i < 12; ++i)
         {
-            mx += result.chroma[(size_t) i];
+            mx += forKey[(size_t) i];
             my += profile[(i - tonic + 12) % 12];
         }
 
@@ -123,7 +164,7 @@ inline KeyEstimate detectKey (const float* const* channels, int numChannels, int
 
         for (int i = 0; i < 12; ++i)
         {
-            const auto dx = result.chroma[(size_t) i] - mx, dy = profile[(i - tonic + 12) % 12] - my;
+            const auto dx = forKey[(size_t) i] - mx, dy = profile[(i - tonic + 12) % 12] - my;
             sxy += dx * dy;
             sxx += dx * dx;
             syy += dy * dy;

@@ -2,6 +2,7 @@
 #include "Core/DrumNMF.h"
 #include "Core/MidiClock.h"
 #include "Core/NoteRepeat.h"
+#include "Core/ChordDetector.h"
 #include "Core/KeyDetector.h"
 #include "Core/MidiMap.h"
 #include "Core/PadBank.h"
@@ -1350,6 +1351,48 @@ static void keyTests()
     CHECK (keyOf (std::vector<float> ((size_t) sr, 0.0f)).status == KeyEstimate::Status::unavailable);
 }
 
+// v1.8: modes, key change shift, chord recognition from chroma (+ bass for roots and inversions).
+static void chordTests()
+{
+    auto intervalsOf = [] (uint16_t mask) { std::vector<int> v; for (int i = 0; i < 12; ++i) if ((mask >> i) & 1u) v.push_back (i); return v; };
+    CHECK (intervalsOf (scales[8].mask) == (std::vector<int> { 0, 2, 3, 5, 7, 9, 10 }));   // Dorian
+    CHECK (intervalsOf (scales[9].mask) == (std::vector<int> { 0, 1, 3, 5, 7, 8, 10 }));   // Phrygian
+    CHECK (intervalsOf (scales[10].mask) == (std::vector<int> { 0, 2, 4, 6, 7, 9, 11 }));  // Lydian
+    CHECK (intervalsOf (scales[11].mask) == (std::vector<int> { 0, 2, 4, 5, 7, 9, 10 }));  // Mixolydian
+    CHECK (intervalsOf (scales[12].mask) == (std::vector<int> { 0, 1, 3, 5, 6, 8, 10 }));  // Locrian
+    CHECK (std::string (scales[(size_t) scaleMajor].name) == "Major" && std::string (scales[(size_t) scaleNaturalMinor].name) == "Natural minor");
+
+    CHECK (keyShiftBetween (9, 0) == 3);   // A -> C: up 3
+    CHECK (keyShiftBetween (0, 9) == -3);  // C -> A: down 3
+    CHECK (keyShiftBetween (0, 6) == -6);  // tritone: down
+    CHECK (keyShiftBetween (0, 5) == 5);
+    CHECK (keyShiftBetween (4, 4) == 0);
+
+    struct Case { const char* expected; std::initializer_list<double> notes; };
+    for (const auto& c : { Case { "C", { 48, 60, 64, 67 } }, Case { "Am", { 45, 57, 60, 64 } }, Case { "Am7", { 45, 57, 60, 64, 67 } },
+                           Case { "C6", { 48, 57, 60, 64, 67 } }, Case { "G7", { 43, 59, 62, 65, 67 } }, Case { "Fmaj7", { 41, 57, 60, 64, 65 } },
+                           Case { "Bdim", { 47, 59, 62, 65 } }, Case { "C/E", { 52, 60, 64, 67 } }, Case { "Dsus4", { 50, 62, 67, 69 } },
+                           Case { "Ebmaj7", { 51, 62, 63, 67, 70 } }, Case { "F#m7b5", { 54, 66, 69, 72, 76 } } })
+    {
+        const auto k = keyOf (tones (c.notes, 1.0));
+        const auto chord = detectChord (k.chroma, k.bassChroma);
+        std::printf ("  chord %s: %s%s score %.2f\n", c.expected, chord.name().c_str(),
+                     chord.status == ChordEstimate::Status::chord ? "" : " (not confident)", chord.score);
+        CHECK (chord.status == ChordEstimate::Status::chord && chord.name() == c.expected);
+    }
+
+    // Noise and a single note are not chords.
+    std::vector<float> noise ((size_t) sr);
+    std::mt19937 rng (7);
+    std::uniform_real_distribution<float> u (-0.5f, 0.5f);
+    for (auto& v : noise) v = u (rng);
+    const auto kn = keyOf (noise);
+    CHECK (detectChord (kn.chroma, kn.bassChroma).status != ChordEstimate::Status::chord);
+    const auto k1 = keyOf (tones ({ 57.0 }, 1.0));
+    CHECK (detectChord (k1.chroma, k1.bassChroma).status != ChordEstimate::Status::chord);
+    CHECK (detectChord ({}, {}).status == ChordEstimate::Status::none);
+}
+
 int main()
 {
     sliceSetTests();
@@ -1369,6 +1412,7 @@ int main()
     midiClockTests();
     noteRepeatTests();
     keyTests();
+    chordTests();
     std::printf (failures == 0 ? "All core tests passed\n" : "%d failure(s)\n", failures);
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

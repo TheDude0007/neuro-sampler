@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <optional>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "Audio/VoiceEngine.h"
 #include "AI/DrumExtractor.h"
@@ -33,6 +34,10 @@ namespace ParamIDs
     inline constexpr auto keyMode   = "keyMode";
     inline constexpr auto scale     = "scale";
     inline constexpr auto scaleRoot = "scaleRoot";
+    inline constexpr auto songKeyLock   = "songKeyLock";
+    inline constexpr auto playKey       = "playKey";
+    inline constexpr auto keyShiftMode  = "keyShiftMode";
+    inline constexpr auto keyShiftScope = "keyShiftScope";
     inline constexpr auto arpOn        = "arpOn";
     inline constexpr auto arpLatch     = "arpLatch";
     inline constexpr auto arpDirection = "arpDirection";
@@ -253,6 +258,15 @@ public:
     const neuro::AnalysisResult* getSliceAnalysis (int sliceIndex) const;
     const neuro::AnalysisResult* getSampleAnalysis() const;
 
+    // Song key = the Scale + Scale Root parameters. Set from detection when a sample is loaded (not on project/preset
+    // restore, not while Song Key Lock is on); after a stem split, from the music without drums. "Play In" moves the
+    // musical slices from the song key to another key by the smallest shift.
+    bool applyDetectedKey();                                    // sets the song key from the best guess now (ignores the lock)
+    // The stem-split key of this sample if known, else its own. Confident only, unless allowUncertain (a best guess).
+    std::optional<neuro::KeyEstimate> getBestKeyEstimate (bool* fromStems = nullptr, bool allowUncertain = false) const;
+    int getEffectiveKeyRoot() const noexcept;                   // the Play In key if set, else the song key root
+    int getKeyShift() const noexcept;                           // Play In shift, -6 .. +5 semitones
+
     // Keyboard mode plays one slice chromatically from its root (manual Root, else detected pitch, else C4).
     void setKeyboardSlice (int sliceIndex);
     int getKeyboardSlice() const noexcept                       { return keyboardSlice; }
@@ -348,7 +362,13 @@ private:
     std::atomic<double> lastHostBpm { 120.0 };
     std::atomic<uint16_t> chordMaskAtomic { 0 };
     uint16_t chordMask = 0;   // audio thread: latched chord
-    int lastChordMode = 0;    // message thread: re-plans variant renders when the mode changes
+    int lastVariantSignature = 0; // message thread: re-plans variant renders when key change / Chord-Lock settings change
+    int variantSignature() const;
+    void setSongKey (const neuro::KeyEstimate&);
+    bool autoKeyPending = false;  // message thread: a sample was loaded by the user; set its key once analysed
+    std::map<juce::String, neuro::KeyEstimate> stemKeys; // stem-split key by source file and stems folder (this session)
+    neuro::KeyEstimate aiStemKey;                        // guarded by aiMutex
+    std::atomic<float> *songKeyLockParam = nullptr, *playKeyParam = nullptr, *keyShiftModeParam = nullptr, *keyShiftScopeParam = nullptr;
     int chordKeysDown = 0;
     std::vector<neuro::StretchKey> chordRequested;
     std::atomic<float> *chordLockParam = nullptr, *chordInputParam = nullptr, *chordSplitParam = nullptr;

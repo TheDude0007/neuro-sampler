@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 (2026-11-12): Song key, chord names, Play In
+- **Song key, set for you:** loading a sample detects its key and sets the **song key** (the root and scale boxes under the knobs). Keys mode, the arp and Chord-Lock follow it. Projects and presets keep their saved key; **Key... > Lock** keeps your own.
+- **Better key detection:** the "bgate" key profiles (Faraldo et al.) and overtone subtraction. On labelled real melodies: 5 of 7 right, up from 3.
+- **Stem-aware:** after **Split stems**, the key is read from the music without drums and used for the song and its stems.
+- **Every slice is named:** pitch, chord (C, Am7, G7, C/E, F#m7b5 … 16 chord types with inversions) and key, shown in the SLICE tab.
+- **Play In:** pick a key and every musical slice moves there by the smallest shift (−6 … +5 semitones), keeping its length (or Resample for the classic sound). Drums stay put unless you choose **All slices**. Set it once and every sample you load lands in that key.
+- **Modes:** Dorian, Phrygian, Lydian, Mixolydian and Locrian added to the scales.
+
 ## 1.7.0 (2026-11-11): 128 slices, stem layer 2
 - **Up to 128 slices, all playable:** 8 pad banks (**A–H**, 128 pads); Grid and Chop offer **128 slices**. Pads A1 upwards keep notes 36–127, the last 36 pads use notes 0–35, so every slice has its own MIDI note. REPEAT, Lock and the rate moved under the pads.
 - **Stem layer 2:** Split stems also writes **Lows** and **Mids** (the music without drums and vocals, split at 200 Hz, zero-phase), so you get Vocals / Mids / Lows / Drums as well as Drums / Bass / Vocals / Other.

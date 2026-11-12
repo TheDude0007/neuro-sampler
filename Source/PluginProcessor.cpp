@@ -35,6 +35,10 @@ NeuroMPCProcessor::NeuroMPCProcessor()
     keyModeParam   = apvts.getRawParameterValue (ParamIDs::keyMode);
     scaleParam     = apvts.getRawParameterValue (ParamIDs::scale);
     scaleRootParam = apvts.getRawParameterValue (ParamIDs::scaleRoot);
+    songKeyLockParam   = apvts.getRawParameterValue (ParamIDs::songKeyLock);
+    playKeyParam       = apvts.getRawParameterValue (ParamIDs::playKey);
+    keyShiftModeParam  = apvts.getRawParameterValue (ParamIDs::keyShiftMode);
+    keyShiftScopeParam = apvts.getRawParameterValue (ParamIDs::keyShiftScope);
     arpOnParam        = apvts.getRawParameterValue (ParamIDs::arpOn);
     arpLatchParam     = apvts.getRawParameterValue (ParamIDs::arpLatch);
     arpDirectionParam = apvts.getRawParameterValue (ParamIDs::arpDirection);
@@ -151,6 +155,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
                                                     return names; }(), 0),
         std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::scaleRoot, 1 }, "Scale Root",
                                                 StringArray { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, 0),
+        std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::songKeyLock, 1 }, "Song Key Lock", false),
+        std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::playKey, 1 }, "Play In Key",
+                                                StringArray { "Original", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, 0),
+        std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::keyShiftMode, 1 }, "Key Change Mode",
+                                                StringArray { "Keep length", "Resample" }, 0),
+        std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::keyShiftScope, 1 }, "Key Change Slices",
+                                                StringArray { "Musical slices", "All slices" }, 0),
         std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::arpOn, 1 }, "Arp On", false),
         std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::arpLatch, 1 }, "Arp Latch", false),
         std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::arpDirection, 1 }, "Arp Direction",
@@ -324,8 +335,11 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     vp.keyboardSlice = keyboardSliceIndex.load();
     vp.keyboardRoot = keyboardRootNote.load();
     vp.scaleMask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1, (int) scaleParam->load())].mask;
-    vp.scaleRoot = (int) scaleRootParam->load();
+    vp.scaleRoot = getEffectiveKeyRoot();
     vp.chordMode = (int) chordLockParam->load();
+    vp.keyShift = vp.keyboardMode ? 0 : getKeyShift(); // Keys mode: the player picks the notes
+    vp.keyShiftKeepLength = keyShiftModeParam->load() < 0.5f;
+    vp.keyShiftAll = keyShiftScopeParam->load() > 0.5f;
 
     // Host timing, shared by the pitch LFO and the arpeggiator. Never derived from the GUI.
     const auto numSamples = buffer.getNumSamples();
@@ -1103,7 +1117,7 @@ void NeuroMPCProcessor::updateArpSettings (double bpm)
     a.humanizeBeats = arpHumanTimeParam->load() / 1000.0 * bpm / 60.0;
     a.humanizeVelocity = arpHumanVelParam->load() / 100.0f;
     a.scaleMask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1, (int) scaleParam->load())].mask;
-    a.scaleRoot = (int) scaleRootParam->load();
+    a.scaleRoot = getEffectiveKeyRoot();
     arp.setSettings (a);                        // keeps the current latch state...
     arp.setLatch (arpLatchParam->load() > 0.5f); // ...so un-latching can release latched notes
 }
@@ -1162,6 +1176,7 @@ bool NeuroMPCProcessor::loadSample (const juce::File& file, juce::String& error)
     publishSlices();
     missingSamplePath.clear();
     pendingSliceTree = {};
+    autoKeyPending = ! restoringState; // a restored project or preset keeps its saved key
     return true;
 }
 
@@ -1697,10 +1712,23 @@ bool NeuroMPCProcessor::startSplitStems()
         const auto ok = computeSeparation (*source, 1, { neuro::demucs::drums, neuro::demucs::bass, neuro::demucs::other, neuro::demucs::vocals },
                                            480.0, stems, error);
 
+        // The song's key from the music without drums (Bass + Other + Vocals): drums smear the chroma.
+        neuro::KeyEstimate key;
+
+        if (ok && stems.size() == 4)
+        {
+            auto music = stems[1];
+            for (int ch = 0; ch < music.getNumChannels(); ++ch)
+                for (size_t st : { (size_t) 2, (size_t) 3 })
+                    music.addFrom (ch, 0, stems[st], ch, 0, music.getNumSamples());
+            key = neuro::detectKey (music.getArrayOfReadPointers(), music.getNumChannels(), music.getNumSamples(), source->sampleRate, 240.0);
+        }
+
         {
             const std::scoped_lock lock (aiMutex);
             aiStems = std::move (stems);
             aiSource = source;
+            aiStemKey = key;
         }
 
         setAiState (ok ? AiState::ready : AiState::failed, ok ? juce::String ("Stems split") : error);
@@ -1716,10 +1744,12 @@ juce::File NeuroMPCProcessor::finishSplitStems()
 
     std::vector<juce::AudioBuffer<float>> stems;
     std::shared_ptr<const neuro::SampleData> source;
+    neuro::KeyEstimate stemKey;
     {
         const std::scoped_lock lock (aiMutex);
         stems = std::move (aiStems);
         source = std::move (aiSource);
+        stemKey = aiStemKey;
     }
 
     // Unlike Extract drums nothing is loaded, so a sample changed meanwhile doesn't matter: the stems are of the song split.
@@ -1752,6 +1782,11 @@ juce::File NeuroMPCProcessor::finishSplitStems()
 
     lastStemsFolder = folder;
     stemSource = source->file;
+    stemKeys[source->file.getFullPathName()] = stemKey;
+    stemKeys[folder.getFullPathName()] = stemKey;
+
+    if (sample == source && songKeyLockParam->load() < 0.5f && stemKey.status == neuro::KeyEstimate::Status::key)
+        setSongKey (stemKey);
     const auto cut = (double) source->length() / source->sampleRate > 480.0 ? " (first 8 min)" : "";
     setAiState (AiState::idle, "Stems split" + juce::String (cut) + ": Drums, Bass, Vocals, Other + Lows, Mids. Load one from Stems...");
     return folder;
@@ -2192,6 +2227,75 @@ const neuro::AnalysisResult* NeuroMPCProcessor::getSampleAnalysis() const
     return sample != nullptr && it != analyses.end() && it->second.covers (0, sample->length()) ? &it->second : nullptr;
 }
 
+int NeuroMPCProcessor::getEffectiveKeyRoot() const noexcept
+{
+    const auto play = (int) playKeyParam->load();
+    return play > 0 ? play - 1 : (int) scaleRootParam->load();
+}
+
+int NeuroMPCProcessor::getKeyShift() const noexcept
+{
+    const auto play = (int) playKeyParam->load();
+    return play > 0 ? neuro::keyShiftBetween ((int) scaleRootParam->load(), play - 1) : 0;
+}
+
+int NeuroMPCProcessor::variantSignature() const
+{
+    return ((getKeyShift() + 16) * 4 + (int) keyShiftModeParam->load() * 2 + (int) keyShiftScopeParam->load()) * 8
+           + (int) chordLockParam->load() * 2 + (isKeyboardMode() ? 1 : 0);
+}
+
+std::optional<neuro::KeyEstimate> NeuroMPCProcessor::getBestKeyEstimate (bool* fromStems, bool allowUncertain) const
+{
+    auto usable = [allowUncertain] (const neuro::KeyEstimate& k)
+    {
+        return k.status == neuro::KeyEstimate::Status::key || (allowUncertain && k.status == neuro::KeyEstimate::Status::uncertain);
+    };
+
+    if (fromStems != nullptr)
+        *fromStems = false;
+
+    if (sample == nullptr)
+        return {};
+
+    // A stem split of this file, or a stem from its stems folder: the key of the music without drums.
+    for (const auto& path : { sample->file.getFullPathName(), sample->file.getParentDirectory().getFullPathName() })
+        if (const auto it = stemKeys.find (path); it != stemKeys.end() && usable (it->second))
+        {
+            if (fromStems != nullptr)
+                *fromStems = true;
+
+            return it->second;
+        }
+
+    if (const auto* a = getSampleAnalysis(); a != nullptr && usable (a->key))
+        return a->key;
+
+    return {};
+}
+
+void NeuroMPCProcessor::setSongKey (const neuro::KeyEstimate& key)
+{
+    auto set = [this] (const char* id, float value)
+    {
+        auto* p = apvts.getParameter (id);
+        p->setValueNotifyingHost (p->convertTo0to1 (value));
+    };
+
+    set (ParamIDs::scaleRoot, (float) key.candidates[0].tonic);
+    set (ParamIDs::scale, (float) (key.candidates[0].minor ? neuro::scaleNaturalMinor : neuro::scaleMajor));
+}
+
+bool NeuroMPCProcessor::applyDetectedKey()
+{
+    const auto key = getBestKeyEstimate (nullptr, true);
+
+    if (key)
+        setSongKey (*key);
+
+    return key.has_value();
+}
+
 // Builds the bank for the current slices from the cache, requests missing renders, evicts LRU entries.
 void NeuroMPCProcessor::refreshStretch()
 {
@@ -2219,22 +2323,32 @@ void NeuroMPCProcessor::refreshStretch()
         }
     }
 
-    // Keep-length Chord-Lock: variants -6..+5 semitones for every eligible (tonal) slice.
-    if ((int) chordLockParam->load() == 2 && sample != nullptr)
+    // Variant renders (keep length), relative to the slice's own rendered pitch: the key change for musical slices, and
+    // Chord-Lock's -6..+5 around it for tonal slices. Mirrors the choice in VoiceEngine::playSlice.
+    if (sample != nullptr)
     {
+        const auto keyShift = isKeyboardMode() || keyShiftModeParam->load() > 0.5f ? 0 : getKeyShift();
+        const auto keyAll = keyShiftScopeParam->load() > 0.5f;
+        const auto chordKeep = (int) chordLockParam->load() == 2;
+
         for (const auto& s : slices.getSlices())
         {
-            if (! neuro::chordLockEligible (s))
-                continue;
+            const auto base = neuro::keyShiftEligible (s, keyAll) ? keyShift : 0;
+            std::vector<int> extras;
 
-            for (int k = -6; k <= 5; ++k)
+            if (base != 0)
+                extras.push_back (base);
+
+            if (chordKeep && neuro::chordLockEligible (s))
+                for (int k = -6; k <= 5; ++k)
+                    if (k != 0 && base + k != 0)
+                        extras.push_back (base + k);
+
+            for (const auto extra : extras)
             {
-                if (k == 0)
-                    continue;
-
                 auto variant = s;
                 variant.pitchMode = neuro::PitchMode::keepLength;
-                variant.pitchSemitones = s.renderedPitch() + (float) k;
+                variant.pitchSemitones = s.renderedPitch() + (float) extra;
                 const auto key = neuro::StretchKey::of (variant);
                 auto cached = std::find_if (stretchCache.begin(), stretchCache.end(), [&] (const auto& c) { return c.entry.key == key; });
 
@@ -2246,7 +2360,7 @@ void NeuroMPCProcessor::refreshStretch()
                 else if (std::find (chordRequested.begin(), chordRequested.end(), key) == chordRequested.end())
                 {
                     chordRequested.push_back (key);
-                    stretchRenderer.request (1000000 + s.id * 16 + k + 6, { sample, sampleVersion, variant });
+                    stretchRenderer.request (1000000 + s.id * 32 + extra + 12, { sample, sampleVersion, variant });
                 }
             }
         }
@@ -2301,7 +2415,7 @@ void NeuroMPCProcessor::processBackgroundResults()
             {
                 const auto pitched = r.pitch.status == neuro::PitchEstimate::Status::pitched;
                 slicesAnalysed |= slices.setAnalysis (r.sliceId, r.start, r.end, (int) r.drumClass, r.timbre.mapX(), r.timbre.mapY(),
-                                                      pitched ? (float) r.pitch.midi : -1.0f);
+                                                      pitched ? (float) r.pitch.midi : -1.0f, r.harmonic());
             }
 
             analyses[r.sliceId] = std::move (r);
@@ -2311,10 +2425,20 @@ void NeuroMPCProcessor::processBackgroundResults()
     if (slicesAnalysed)
         rtSlices.publish (std::make_shared<const neuro::SliceSet> (slices)); // analysis data only: no re-analysis
 
-    // Chord-Lock variant renders depend on analysis (which slices are tonal) and on the mode.
-    if (const auto chordMode = (int) chordLockParam->load(); slicesAnalysed || chordMode != lastChordMode)
+    // Song key from the first analysis of a newly loaded sample.
+    if (autoKeyPending && getSampleAnalysis() != nullptr)
     {
-        lastChordMode = chordMode;
+        autoKeyPending = false;
+
+        if (songKeyLockParam->load() < 0.5f)
+            if (const auto key = getBestKeyEstimate())
+                setSongKey (*key);
+    }
+
+    // Variant renders depend on analysis (which slices are musical/tonal), the key change and the Chord-Lock mode.
+    if (const auto signature = variantSignature(); slicesAnalysed || signature != lastVariantSignature)
+    {
+        lastVariantSignature = signature;
         refreshStretch();
     }
 

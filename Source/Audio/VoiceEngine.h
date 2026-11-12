@@ -28,6 +28,11 @@ struct VoiceParams
     // Chord-Lock: tonal slices retune to the nearest tone of the held chord (pitch-class mask; 0 = no chord).
     int chordMode = 0;            // 0 off, 1 resample, 2 keep length (renders, resample while pending)
     uint16_t chordMask = 0;
+
+    // Key change ("Play in"): musical slices (or all) move by keyShift semitones, keeping their length unless resampling.
+    int keyShift = 0;
+    bool keyShiftKeepLength = true;
+    bool keyShiftAll = false;
 };
 
 // Chord-Lock: semitones to move `midi` to the nearest pitch class in `mask` (0 when the mask is empty).
@@ -58,6 +63,13 @@ inline bool chordLockEligible (const SliceDefinition& s) noexcept
 {
     const auto cls = s.effectiveClass();
     return (s.rootNote >= 0.0f || s.detectedRoot >= 0.0f) && (cls < 0 || cls == (int) DrumClass::tonal);
+}
+
+// Slices a key change moves: musical ones (a clear note or chord, tonal class, a set root, or not analysed yet), or all.
+inline bool keyShiftEligible (const SliceDefinition& s, bool all) noexcept
+{
+    const auto cls = s.effectiveClass();
+    return all || s.detectedHarmonic || s.rootNote >= 0.0f || cls < 0 || cls == (int) DrumClass::tonal;
 }
 
 // Where voices render: each drum class can have its own output (nullptr = main) and level.

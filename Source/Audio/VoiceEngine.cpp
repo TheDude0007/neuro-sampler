@@ -50,29 +50,32 @@ void VoiceEngine::playSlice (int index, int noteTag, float level, float pitchOff
     const auto displayOffset = start;
     auto displayScale = 1.0;
     auto pitch = (double) slice.pitchSemitones + pitchOffset; // slice pitch is resampled unless a keep-length render is used
-    auto chordShift = 0.0f;
+    const auto keyShift = params.keyShift != 0 && keyShiftEligible (slice, params.keyShiftAll) ? params.keyShift : 0;
+    auto extraShift = (float) keyShift; // key change + Chord-Lock, on top of the slice's own pitch
 
     if (params.chordMode != 0 && params.chordMask != 0 && chordLockEligible (slice))
-        chordShift = chordLockOffset ((slice.rootNote >= 0.0f ? slice.rootNote : slice.detectedRoot) + (float) pitch, params.chordMask);
+        extraShift += chordLockOffset ((slice.rootNote >= 0.0f ? slice.rootNote : slice.detectedRoot) + (float) pitch + (float) keyShift,
+                                       params.chordMask);
 
-    // Keep-length Chord-Lock uses a variant rendered with the whole-semitone part of the shift.
-    const auto chordRendered = params.chordMode == 2 ? (int) std::lround (chordShift) : 0;
-    const auto useRender = slice.needsRender() || chordRendered != 0;
+    // Keep-length key change and Chord-Lock use a variant rendered with the whole-semitone part of their shift.
+    const auto extraRendered = (params.keyShiftKeepLength ? keyShift : 0)
+                               + (params.chordMode == 2 ? (int) std::lround (extraShift - (float) keyShift) : 0);
+    const auto useRender = slice.needsRender() || extraRendered != 0;
 
     if (bank != nullptr && useRender)
     {
-        if (const auto* entry = bank->find (slice, chordRendered); entry != nullptr && entry->audio->getNumSamples() >= 2)
+        if (const auto* entry = bank->find (slice, extraRendered); entry != nullptr && entry->audio->getNumSamples() >= 2)
         {
             src = entry->audio.get();
             start = 0;
             end = src->getNumSamples();
             displayScale = 1.0 / slice.timeStretchRatio;
             pitch -= slice.renderedPitch(); // already in the render
-            chordShift -= (float) chordRendered;
+            extraShift -= (float) extraRendered;
         }
     }
 
-    pitch += chordShift; // the remainder (or all of it, while a render is pending) by resampling
+    pitch += extraShift; // the remainder (or all of it, while a render is pending) by resampling
 
     if (chokeGroup > 0)
         for (auto& other : voices)
