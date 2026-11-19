@@ -49,3 +49,18 @@ None of Akai's UI, artwork or code is used.
 - 1/128 hits every 750 samples.
 - Latch keeps going; Lock off stops cleanly.
 - 16 Levels velocity and tune values are exact.
+
+## Jog chop (v1.11)
+- **START / END** (CHOP tab): endless knobs that move the selected slice's start and end. END moves the next slice's start.
+  - On the first slice, START cuts the head off into its own slice.
+  - On the last slice, END cuts the tail off. The first step always cuts at least 64 samples.
+- **Step:**
+  - 1 sample, 0.1 ms, 1 ms or 10 ms per knob step;
+  - **follow zoom:** 1/4000 of the sample.
+- **While you turn:**
+  - the waveform shows about 300 steps around the marker (at least 20 ms);
+  - the readout shows the time, the sample position and the slice length;
+  - the slice plays 180 ms after the knob stops.
+- **Zero-cross:** each cut moves to the nearest zero crossing within 2 ms.
+- **Controller knobs:** only movement counts, so absolute knobs work as jog wheels. A jump of more than 24 steps (a knob picked up at a new position) only resyncs.
+- **Knobs on MPK K5/K6:** maps K5 (CC5) to START and K6 (CC6) to END on channel 1. Turning it off gives K5/K6 back to LFO depth and rate. Any knob can be MIDI-learned to `chop.jogStart` / `chop.jogEnd` instead.

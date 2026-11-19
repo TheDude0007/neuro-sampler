@@ -30,6 +30,7 @@ struct SampleInfo
     SampleType type = SampleType::other;
     int bpm = 0;    // 0 = unknown
     int keyPc = -1; // pitch class of the key / note named in the file, or -1
+    bool keyNamed = false; // keyPc is a key with its mode ("Bmin", "F# Maj", "G Minor"), not just a note in brackets
     bool minor = false;
 };
 
@@ -166,6 +167,7 @@ namespace samplecat
                 && (t[i + 2] == "major" || t[i + 2] == "minor" || t[i + 2] == "maj" || t[i + 2] == "min"))
             {
                 info.keyPc = (pitchClassOfName (x) + (t[i + 1] == "sharp" ? 1 : 11)) % 12;
+                info.keyNamed = true;
                 info.minor = t[i + 2] == "minor" || t[i + 2] == "min";
                 return;
             }
@@ -178,6 +180,7 @@ namespace samplecat
                 || (rest.empty() && (nextMode == "min" || nextMode == "minor" || nextMode == "maj" || nextMode == "major")))
             {
                 info.keyPc = pitchClassOfName (std::string_view (x).substr (0, acc));
+                info.keyNamed = true;
                 info.minor = rest == "min" || rest == "minor" || rest == "m" || nextMode == "min" || nextMode == "minor";
                 return;
             }

@@ -353,6 +353,40 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     repeatLatch.setTooltip ("Latch: pads keep repeating after you let go (turn off to stop)");
     repeatPad.onHold = [this] (bool down) { if (! repeatLock.getToggleState()) setRepeat (down); };
     repeatPad.setTooltip ("Hold to repeat: left-right = rate (1 bar .. 1/128), down-up = gate");
+
+    // Jog chop: endless knobs; only their movement counts, so absolute controller knobs (MPK) work as jog wheels.
+    for (auto [knob, side] : { std::pair { &jogLeft, 0 }, std::pair { &jogRight, 1 } })
+    {
+        knob->setRange (0.0, 127.0, 1.0);
+        knob->setValue (64.0, juce::dontSendNotification);
+        knob->setRotaryParameters (0.0f, juce::MathConstants<float>::twoPi, false); // a full circle: a wheel, not a pot
+        knob->setMouseDragSensitivity (400);
+        knob->onValueChange = [this, knob, side]
+        {
+            const auto v = knob->getValue();
+            const auto delta = v - std::exchange (jogLast[(size_t) side], v);
+            if (std::abs (delta) <= 24.0) // bigger jumps = a controller knob picked up at a new position: resync only
+                jogMarker (side, delta);
+        };
+        knob->onDragEnd = [this, knob, side] { knob->setValue (64.0, juce::dontSendNotification); jogLast[(size_t) side] = 64.0; };
+    }
+    jogLeft.setTooltip ("Jog the selected slice's START: turn to move it very finely (MIDI-mappable; see Knobs on MPK)");
+    jogRight.setTooltip ("Jog the selected slice's END (the next slice's start; on the last slice it cuts off the tail)");
+    jogLeftLabel.setText ("START", juce::dontSendNotification);
+    jogRightLabel.setText ("END", juce::dontSendNotification);
+    for (auto* l : { &jogLeftLabel, &jogRightLabel, &jogInfo })
+    {
+        l->setFont (juce::FontOptions (11.0f));
+        l->setJustificationType (l == &jogInfo ? juce::Justification::centredLeft : juce::Justification::centred);
+    }
+    jogStep.addItemList ({ "Step: 1 sample", "Step: 0.1 ms", "Step: 1 ms", "Step: 10 ms", "Step: follow zoom" }, 1);
+    jogStep.setSelectedId (2, juce::dontSendNotification);
+    jogStep.setTooltip ("How far one knob step moves the marker. The waveform zooms in around the marker while you jog");
+    jogZero.setToggleState (true, juce::dontSendNotification);
+    jogZero.setTooltip ("Land markers on the nearest zero crossing (clean, click-free chops)");
+    jogMpk.setTooltip ("Put START / END on the MPK mini knobs K5 and K6 (off: K5/K6 go back to LFO depth / rate)");
+    jogMpk.onClick = [this] { proc.setJogOnMpk (jogMpk.getToggleState()); };
+    jogMpk.setToggleState (proc.isJogOnMpk(), juce::dontSendNotification);
     for (auto* c : chopPanelComponents())
         addAndMakeVisible (c);
 
@@ -1387,7 +1421,8 @@ void NeuroMPCEditor::registerMappables()
              { &extractAiButton, "kit.extractAi" }, { &teachKick, "kit.teachKick" }, { &teachSnare, "kit.teachSnare" }, { &teachHat, "kit.teachHat" }, { &teachClear, "kit.teachClear" }, { &showStems, "kit.showStems" }, { &kitToPads, "kit.toPads" }, { &repeatLock, "repeat.lock" }, { &skinBox, "view.skin" },
              { &chopTab, "view.chop" }, { &chopMode, "chop.mode" }, { &chopGrid, "chop.grid" }, { &chopSensitivity, "chop.sensitivity" },
              { &chopButton, "chop.go" }, { &chopSnap, "chop.snap" }, { &slicesToPads, "chop.slicesToPads" }, { &chopKitToPads, "chop.kitToPads" },
-             { &levelsMode, "chop.levels" }, { &splitStemsButton, "kit.splitStems" }, { &chordTab, "view.chord" },
+             { &levelsMode, "chop.levels" }, { &jogLeft, "chop.jogStart" }, { &jogRight, "chop.jogEnd" }, { &jogStep, "chop.jogStep" },
+             { &jogZero, "chop.jogZeroCross" }, { &jogMpk, "chop.jogOnMpk" }, { &splitStemsButton, "kit.splitStems" }, { &chordTab, "view.chord" },
              { &chordUseSlice, "chord.useSlice" } })
         id (*c, name);
 
@@ -1699,11 +1734,19 @@ void NeuroMPCEditor::showKeyMenu()
     bool fromStems = false;
     const auto best = proc.getBestKeyEstimate (&fromStems, true);
     juce::PopupMenu m;
+    auto keyName = [] (int pc, bool minor) { return juce::String (neuro::pitchClassName (pc)) + (minor ? " minor" : " major"); };
+    const auto named = proc.getNamedKey();
+    if (named)
+        m.addItem (10, "Use key from file name: " + keyName (named->first, named->second));
     m.addItem (1, best ? "Use detected key: " + juce::String (neuro::pitchClassName (best->candidates[0].tonic))
                              + (best->candidates[0].minor ? " minor" : " major") + (fromStems ? " (stems)" : "")
                              + (best->status == neuro::KeyEstimate::Status::key ? "" : " (best guess)")
                        : juce::String ("No key detected"),
                best.has_value());
+    // The detector's runners-up: when it's wrong, the right key is usually one of these (often a fifth away).
+    if (best)
+        for (int c = 1; c < 3; ++c)
+            m.addItem (10 + c, "  or: " + keyName (best->candidates[(size_t) c].tonic, best->candidates[(size_t) c].minor));
     m.addItem (2, "Lock song key (don't set it on load)", true, locked);
     m.addSeparator();
     m.addSectionHeader ("Play In: key change");
@@ -1723,6 +1766,11 @@ void NeuroMPCEditor::showKeyMenu()
         switch (result)
         {
             case 1: proc.applyDetectedKey(); break;
+            case 10: if (const auto k = proc.getNamedKey()) proc.setSongKey (k->first, k->second); break;
+            case 11: case 12:
+                if (const auto b = proc.getBestKeyEstimate (nullptr, true))
+                    proc.setSongKey (b->candidates[(size_t) (result - 10)].tonic, b->candidates[(size_t) (result - 10)].minor);
+                break;
             case 2: set (ParamIDs::songKeyLock, proc.apvts.getRawParameterValue (ParamIDs::songKeyLock)->load() > 0.5f ? 0.0f : 1.0f); break;
             case 3: set (ParamIDs::keyShiftMode, 0.0f); break;
             case 4: set (ParamIDs::keyShiftMode, 1.0f); break;
@@ -1916,7 +1964,8 @@ void NeuroMPCEditor::updateChordPanel()
 std::vector<juce::Component*> NeuroMPCEditor::chopPanelComponents()
 {
     return { &chopTitle, &chopInfo, &chopMode, &chopGrid, &chopSensitivity, &chopButton, &chopSnap, &slicesToPads, &chopKitToPads,
-             &levelsMode, &repeatPad, &repeatGate, &repeatSwing, &repeatLatch };
+             &levelsMode, &repeatPad, &repeatGate, &repeatSwing, &repeatLatch, &jogLeft, &jogRight, &jogStep, &jogZero, &jogMpk,
+             &jogInfo, &jogLeftLabel, &jogRightLabel };
 }
 
 void NeuroMPCEditor::updateChopPanel()
@@ -2320,8 +2369,87 @@ void NeuroMPCEditor::setRepeat (bool on)
     p->endChangeGesture();
 }
 
+// Jog chop: move the selected slice's start (side 0) or end (side 1) by delta knob steps.
+void NeuroMPCEditor::jogMarker (int side, double delta)
+{
+    const auto s = proc.getSample();
+    const auto& set = proc.getSlices();
+
+    if (s == nullptr || set.size() == 0 || delta == 0.0)
+        return;
+
+    auto sel = juce::jlimit (0, set.size() - 1, waveform.getSelectedSlice());
+    const auto rate = s->sampleRate;
+    const double steps[] { 1.0, rate * 0.0001, rate * 0.001, rate * 0.01, 0.0 };
+    auto step = steps[(size_t) juce::jlimit (0, 4, jogStep.getSelectedId() - 1)];
+    if (step <= 0.0) step = juce::jmax (1.0, (double) set.getTotalLength() / 4000.0); // follow zoom: set below
+    const auto move = (int64_t) std::llround (delta * juce::jmax (1.0, step));
+    const auto& slice = set.getSlices()[(size_t) sel];
+    auto target = (side == 0 ? slice.startSample : slice.endSample) + move;
+
+    // Nearest zero crossing (channel 0) within +-2 ms, so the chop doesn't click.
+    auto snap = [&] (int64_t pos)
+    {
+        if (! jogZero.getToggleState()) return pos;
+        const auto* x = s->buffer.getReadPointer (0);
+        const auto n = (int64_t) s->buffer.getNumSamples();
+        const auto reach = (int64_t) (rate * 0.002);
+        for (int64_t d = 0; d <= reach; ++d)
+            for (const auto p : { pos + d, pos - d })
+                if (p > 0 && p < n && (x[p - 1] <= 0.0f) != (x[p] <= 0.0f))
+                    return p;
+        return pos;
+    };
+    target = snap (target);
+
+    if (side == 0 && sel == 0)
+    {
+        // The first slice starts at 0: jogging its start forward cuts the head off into its own slice.
+        const auto before = set.size();
+        target = std::max<int64_t> (target, neuro::SliceSet::minSliceLength); // the first step always cuts
+        if (move > 0)
+            proc.editSlices ([&] (auto& e) { e.split (target); });
+        if (proc.getSlices().size() > before)
+            sel = 1;
+    }
+    else if (side == 0)
+    {
+        proc.editSlices ([&] (auto& e) { e.moveStart (sel, target); });
+    }
+    else if (sel + 1 < set.size())
+    {
+        proc.editSlices ([&] (auto& e) { e.moveStart (sel + 1, target); });
+    }
+    else if (move < 0)
+    {
+        target = std::min<int64_t> (target, set.getTotalLength() - neuro::SliceSet::minSliceLength);
+        proc.editSlices ([&] (auto& e) { e.split (target); }); // the last slice: cut the tail off
+    }
+
+    waveform.setSelectedSlice (sel);
+    const auto& now = proc.getSlices().getSlices()[(size_t) juce::jlimit (0, proc.getSlices().size() - 1, sel)];
+    const auto marker = side == 0 ? now.startSample : now.endSample;
+    waveform.focusOn (marker, (int64_t) juce::jmax (rate * 0.02, step * 300.0)); // ~300 knob steps across the view
+    jogInfo.setText (juce::String ("Slice ") + juce::String (sel + 1) + (side == 0 ? "  start " : "  end ")
+                         + juce::String ((double) marker / rate, 5) + " s  (" + juce::String (marker) + ")\nlength "
+                         + juce::String ((double) (now.endSample - now.startSample) / rate * 1000.0, 1) + " ms",
+                     juce::dontSendNotification);
+    jogAuditionAt = juce::Time::getMillisecondCounterHiRes() + 180.0; // hear it once the knob rests
+}
+
 void NeuroMPCEditor::timerCallback()
 {
+    if (jogAuditionAt > 0.0 && juce::Time::getMillisecondCounterHiRes() >= jogAuditionAt)
+    {
+        jogAuditionAt = 0.0;
+        if (const auto sel = waveform.getSelectedSlice(); sel >= 0)
+        {
+            if (jogAuditionTag >= 0)
+                proc.stopAudition (jogAuditionTag);
+            jogAuditionTag = proc.startSliceAudition (sel);
+        }
+    }
+
     // Edge lights: 15 fps, repainting only the margin, which no control overlaps.
     if (++edgeTick % 2 == 0)
     {
@@ -3076,7 +3204,24 @@ void NeuroMPCEditor::resized()
             r1.removeFromLeft (6);
         }
         levelsMode.setBounds (r1.removeFromLeft (170));
-        chopInfo.setBounds (row (40));
+        auto r2 = row (58);
+        for (auto [knob, label] : { std::pair { &jogLeft, &jogLeftLabel }, std::pair { &jogRight, &jogRightLabel } })
+        {
+            auto col = r2.removeFromLeft (56);
+            label->setBounds (col.removeFromTop (12));
+            knob->setBounds (col);
+            r2.removeFromLeft (4);
+        }
+        r2.removeFromLeft (6);
+        auto jogCol = r2.removeFromLeft (150);
+        jogStep.setBounds (jogCol.removeFromTop (24));
+        jogCol.removeFromTop (4);
+        jogZero.setBounds (jogCol.removeFromTop (24));
+        r2.removeFromLeft (6);
+        auto infoCol = r2;
+        jogMpk.setBounds (infoCol.removeFromTop (24).withWidth (170));
+        jogInfo.setBounds (infoCol.withTrimmedTop (4));
+        chopInfo.setBounds (row (20));
 
         repeatPad.setBounds (right.removeFromTop (juce::jmin (110, right.getHeight() - 60)));
         right.removeFromTop (6);

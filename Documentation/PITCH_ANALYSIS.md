@@ -72,3 +72,30 @@ The two misses, "Kin Am" (reads G major, uncertain) and "Proper F" (reads A mino
 - **Key profiles:** major/minor profiles suit Western tonal music. Relative major/minor pairs are often close, so expect `uncertain` on short or modal material. Modes (Dorian …) are never detected, only chosen.
 - **Chords:** names come from chroma, so chords with the same notes in a weak bass (Am7 / C6) can swap, and busy mixes with drums read as `uncertain` more often than clean chord loops.
 - **Coverage:** only the first 8 s (pitch) and 60 s (key) of a region are analysed.
+
+## Key detection benchmark (v1.11)
+**Test sets:**
+- **713 loops** from producer packs whose file names state the key. Drum stems are excluded, and 93% of the keys are minor.
+- **11 full loops** labelled by their producer (mikerobbins), never used for tuning.
+
+**Tools:**
+- `neuro_field_test keys <list.tsv>`: the plugin's own load → analysis → song-key path. Each line of the list is `path<TAB>tonic pitch class<TAB>minor`.
+- `neuro_field_test keyfeat <list> <out>`: dumps features for experiments (Core/KeyFeatures.h).
+
+| | 713 loops exact / same notes | 11 loops exact |
+|---|---|---|
+| Current detector (bgate profiles, Goertzel chroma) | 37.0% / 47.5% | 6 / 11 |
+| Peak HPCP + tuning (Core/KeyFeatures.h), bgate | 39.4% / 50.6% | 5 / 11 |
+| + start-of-loop chroma | 39.8% / 52.3% | 5 / 11 |
+| Trained tonic + theory model (major/minor balanced, held-out packs) | 41.5% / 50.3% | 4 / 11 |
+| Trained, minor-biased | 55% / 57% (0% on major keys) | — |
+| **Song key on load with the file-name key** | — | **11 / 11** |
+
+**Findings:**
+- **Most misses are a fifth or a fourth away (59%).** A stem using five or six notes fits both neighbouring keys almost equally well. "Asteroids B Min Synth" puts 98% of its energy in B minor's notes and 99% in the notes of the key a fifth away. Without the deciding note, no analysis of that stem alone can be sure.
+- **Some samples sit between two keys.** One sample measured 43 cents flat (between Bb and B), labelled Bb.
+- **No audio-only variant beat the current detector on both sets,** so it is unchanged.
+- **What changed instead:**
+  - the file-name key is trusted on load;
+  - the Key... menu offers the runners-up (the right key is in the top 3 most of the time).
+- **Full songs:** Split stems first. The key is then read from the music without drums.

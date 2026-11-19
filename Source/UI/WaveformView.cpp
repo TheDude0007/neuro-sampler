@@ -296,6 +296,19 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
     repaint();
 }
 
+void WaveformView::focusOn (int64_t sample, int64_t span)
+{
+    const auto total = proc.getSlices().getTotalLength();
+
+    if (total <= 0)
+        return;
+
+    span = juce::jlimit<int64_t> (64, total, span);
+    viewStart = juce::jlimit<int64_t> (0, total - span, sample - span / 2);
+    viewEnd = viewStart + span;
+    repaint();
+}
+
 void WaveformView::zoomAround (float x, double factor)
 {
     const auto total = proc.getSlices().getTotalLength();

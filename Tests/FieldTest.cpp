@@ -2,6 +2,10 @@
 // Usage: neuro_field_test <outputDir> <loop.caf/wav>...
 #include "Core/TransientDetector.h"
 #include "PluginEditor.h"
+#include "Core/KeyFeatures.h"
+#include "Core/KeyDetector.h"
+#include <thread>
+#include <mutex>
 #include <CoreFoundation/CoreFoundation.h>
 
 namespace
@@ -151,6 +155,113 @@ namespace
         std::printf ("snapshot: %s\n", file.getFullPathName().toRawUTF8());
     }
 
+    // Key features dump (for training/evaluating key profiles): reads each file of a list, writes
+    // path, want, minor, oldTonic, oldMinor, tuning, hpcp[12], bass[12], oldChroma[12]. Parallel.
+    void keyFeatures (const juce::File& listFile, const juce::File& outFile)
+    {
+        juce::StringArray lines;
+        lines.addLines (listFile.loadFileAsString());
+        std::vector<juce::String> results ((size_t) lines.size());
+        std::atomic<int> next { 0 };
+        auto work = [&]
+        {
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            for (int i; (i = next++) < lines.size();)
+            {
+                const auto f = juce::StringArray::fromTokens (lines[i], "\t", "");
+                if (f.size() < 3) continue;
+                std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (juce::File (f[0])));
+                if (r == nullptr) continue;
+                const auto len = (int) juce::jmin<juce::int64> (r->lengthInSamples, (juce::int64) (r->sampleRate * 90.0));
+                juce::AudioBuffer<float> b ((int) juce::jmin (2u, r->numChannels), len);
+                r->read (&b, 0, len, 0, true, b.getNumChannels() > 1);
+                const auto old = neuro::detectKey (b.getArrayOfReadPointers(), b.getNumChannels(), len, r->sampleRate);
+                const auto kf = neuro::computeKeyFeatures (b.getArrayOfReadPointers(), b.getNumChannels(), len, r->sampleRate);
+                juce::String line;
+                line << f[0] << "\t" << f[1] << "\t" << f[2] << "\t" << old.candidates[0].tonic << "\t" << (old.candidates[0].minor ? 1 : 0)
+                     << "\t" << kf.tuningCents;
+                for (auto v : kf.hpcp) line << "\t" << v;
+                for (auto v : kf.bass) line << "\t" << v;
+                for (auto v : old.chroma) line << "\t" << v;
+                for (auto v : kf.hpcpStart) line << "\t" << v;
+                for (auto v : kf.bassStart) line << "\t" << v;
+                results[(size_t) i] = line;
+            }
+        };
+        std::vector<std::thread> pool;
+        for (unsigned t = 0; t < juce::jmax (2u, std::thread::hardware_concurrency()); ++t) pool.emplace_back (work);
+        for (auto& t : pool) t.join();
+        juce::String all;
+        for (auto& l : results) if (l.isNotEmpty()) all << l << "\n";
+        outFile.replaceWithText (all);
+        std::printf ("wrote %s\n", outFile.getFullPathName().toRawUTF8());
+    }
+
+    // Key detection benchmark: list file lines "path<TAB>expectedPc<TAB>minor" (expectedPc -1 = unknown, just report).
+    // Uses the plugin's own path: load -> analysis -> getBestKeyEstimate (uncertain allowed, as the song key uses).
+    void keyBenchmark (const juce::File& listFile)
+    {
+        juce::StringArray lines;
+        lines.addLines (listFile.loadFileAsString());
+        int songOk = 0;
+        int labelled = 0, exact = 0, relative = 0, fifth = 0, parallel = 0, none = 0;
+        static const char* names[] { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+        auto keyName = [] (int pc, bool minor) { return juce::String (names[(pc % 12 + 12) % 12]) + (minor ? "m" : ""); };
+
+        for (const auto& line : lines)
+        {
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() < 3) continue;
+            NeuroMPCProcessor p;
+            p.prepareToPlay (48000.0, 512);
+            juce::String error;
+            if (! p.loadSample (juce::File (f[0]), error)) { std::printf ("SKIP %s\n", error.toRawUTF8()); continue; }
+            p.waitForBackgroundWork (60000);
+            p.processBackgroundResults(); // sets the song key, as on a user load
+            const auto songRoot = (int) p.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load();
+            const auto songMinor = (int) p.apvts.getRawParameterValue (ParamIDs::scale)->load() == neuro::scaleNaturalMinor;
+            const auto k = p.getBestKeyEstimate (nullptr, true);
+            const auto want = f[1].getIntValue();
+            const auto wantMinor = f[2].getIntValue() != 0;
+            juce::String got = "none";
+            juce::String verdict;
+
+            if (k)
+            {
+                const auto& c = k->candidates[0];
+                got = keyName (c.tonic, c.minor) + (k->status == neuro::KeyEstimate::Status::key ? "" : "?") + " (2nd " + keyName (k->candidates[1].tonic, k->candidates[1].minor) + ")";
+
+                if (want >= 0)
+                {
+                    ++labelled;
+                    // The relative key shares the notes: Am = C. Compare as the major tonic.
+                    const auto majGot = c.minor ? (c.tonic + 3) % 12 : c.tonic, majWant = wantMinor ? (want + 3) % 12 : want;
+                    if (c.tonic == want && c.minor == wantMinor) { ++exact; verdict = "OK"; }
+                    else if (majGot == majWant) { ++relative; verdict = "relative"; }
+                    else if ((majGot - majWant + 12) % 12 == 7 || (majWant - majGot + 12) % 12 == 7) { ++fifth; verdict = "fifth"; }
+                    else if (c.tonic == want) { ++parallel; verdict = "parallel"; }
+                    else verdict = "WRONG";
+                }
+            }
+            else if (want >= 0)
+            {
+                ++labelled; ++none; verdict = "none";
+            }
+
+            if (want >= 0) songOk += (songRoot == want && songMinor == wantMinor) ? 1 : 0;
+            std::printf ("%-9s want %-4s song key %-4s detected %-22s %s\n", verdict.toRawUTF8(), want >= 0 ? keyName (want, wantMinor).toRawUTF8() : "?",
+                         keyName (songRoot, songMinor).toRawUTF8(),
+                         got.toRawUTF8(), juce::File (f[0]).getFileName().substring (0, 60).toRawUTF8());
+        }
+
+        if (labelled > 0)
+            std::printf ("\nsong key set on load: %d / %d right\n", songOk, labelled);
+        if (labelled > 0)
+            std::printf ("labelled %d: exact %d (%.0f%%), +relative %d (%.0f%% same notes), fifth %d, parallel %d, none %d\n", labelled, exact,
+                         100.0 * exact / labelled, relative, 100.0 * (exact + relative) / labelled, fifth, parallel, none);
+    }
+
     // Library browser snapshot (v1.10): indexes the configured sections, then shows the panel.
     void librarySnapshot (const juce::File& outDir)
     {
@@ -283,7 +394,30 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI init;
     if (argc == 3 && juce::String (argv[1]) == "workflow") { workflow (argv[2], false); workflow (argv[2], true); return 0; }
+    if (argc == 4 && juce::String (argv[1]) == "keyfeat") { keyFeatures (juce::File (argv[2]), juce::File (argv[3])); return 0; }
+    if (argc == 3 && juce::String (argv[1]) == "keys") { keyBenchmark (juce::File (argv[2])); return 0; }
     if (argc == 3 && juce::String (argv[1]) == "library") { librarySnapshot (juce::File (argv[2])); return 0; }
+    if (argc == 5 && juce::String (argv[1]) == "tab")
+    {
+        NeuroMPCProcessor p;
+        juce::String error;
+        p.prepareToPlay (48000.0, 512);
+        p.loadSample (juce::File (argv[3]), error);
+        p.editSlices ([] (auto& set) { set.grid (8); });
+        std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+        auto* editor = dynamic_cast<NeuroMPCEditor*> (ed.get());
+        editor->setSize (1140, 840);
+        editor->showTab (juce::String (argv[4]).getIntValue());
+        editor->selectSliceForTest (2);
+        editor->jogForTest (0, 7.0, 2, true);
+        const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        const auto file = juce::File (argv[2]).getChildFile ("tab" + juce::String (argv[4]) + ".png");
+        file.deleteFile();
+        juce::FileOutputStream out (file);
+        juce::PNGImageFormat().writeImageToStream (image, out);
+        std::printf ("snapshot: %s\n", file.getFullPathName().toRawUTF8());
+        return 0;
+    }
     if (argc == 4 && juce::String (argv[1]) == "chords") { chordSnapshot (juce::File (argv[2]), argv[3]); return 0; }
     if (argc < 4) { std::printf ("usage: neuro_field_test <outDir> <kitWav> <loop>...\n"); return 1; }
     const juce::File outDir (argv[1]);

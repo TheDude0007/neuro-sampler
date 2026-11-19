@@ -1423,6 +1423,16 @@ static void sampleCategoryTests()
     CHECK (bracket.keyPc == 0 && bracket.type == T::bass808);
     CHECK (neuro::classifySample ("Aahs Kanye  Bm [d# f# b]", { "Vox" }).keyPc == 11);
     CHECK (neuro::classifySample ("Kick 3", {}).keyPc == -1);
+    // Real labelled loops (mikerobbins): dotted titles must not read as notes; the key is the "Bmin" / "F#maj" token.
+    struct Named { const char* name; int pc; bool minor; };
+    for (const auto& n : { Named { "_1. C.H.A.N.C.E.S 120bpm Bmin mikerobbins", 11, true }, Named { "_5. 4.S.U.R.E 102bpm F#maj mikerobbins", 6, false },
+                           Named { "_7. S.U.N.S.H.I.N.E 93bpm Abmaj mikerobbins", 8, false }, Named { "_8. I.C.E.C.R.E.A.M 149bpm Dbmin mikerobbins", 1, true },
+                           Named { "_3. M.U.R.D.E.R.C.R.O.W.S.2 118bpm Bbmin mikerobbins", 10, true }, Named { "DRESSCODE 70 BPM A MINOR (1)", 9, true } })
+    {
+        const auto k = neuro::classifySample (n.name, {});
+        CHECK (k.keyNamed && k.keyPc == n.pc && k.minor == n.minor);
+    }
+    CHECK (! neuro::classifySample ("808_TOLIVERSPINZ (C)", {}).keyNamed); // a note, not a key
     const auto spelled = neuro::classifySample ("still texting me [140bpm f sharp major]", {});
     CHECK (spelled.keyPc == 6 && ! spelled.minor && spelled.bpm == 140);
 }

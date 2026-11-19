@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.11.0 (2026-11-19): Jog chop, keys from file names
+- **Jog chop** (CHOP tab):
+  - **START** and **END** knobs move the selected slice's start and end very finely. The step is 1 sample, 0.1 ms, 1 ms, 10 ms, or follows the zoom.
+  - The waveform zooms in around the marker while you turn, and the slice plays once the knob rests. **Zero-cross** lands every cut on a zero crossing, so it never clicks.
+  - On the first slice, START cuts the head off; on the last, END cuts the tail off.
+  - The knobs only count movement, so ordinary controller knobs work as jog wheels. **Knobs on MPK K5/K6** puts them on the MPK mini mk2 in one click; any knob can also be MIDI-learned.
+- **Song key from the file name:** when a sample's name states its key (`120bpm Bmin`, `F#maj`, `G Minor`, `f sharp major`), that key is used on load. On 11 labelled loops the song key is now 11/11 right; audio analysis alone gets 6/11.
+- **Key... menu:** "Use key from file name", plus the detector's two runners-up ("or: …"), so a wrong guess (usually a fifth away) is one click from right.
+- **Key detection research** (Documentation/PITCH_ANALYSIS.md):
+  - **Benchmark:** 713 labelled loops and the 11 test loops.
+  - **What was tried:** a new peak-based, tuning-corrected profile and a trained model scored up to 5 points higher in cross-validation, but worse on the full test loops, so the detector is unchanged.
+  - **Why it can't be perfect:** most misses are single stems whose few notes fit two neighbouring keys equally well.
+
+
 ## 1.10.0 (2026-11-19): Sample library
 - **Library** (top bar): a browser for your own sample folders, organised in sections (Drums, Melodies, …). Folders are indexed in place; nothing is copied.
 - **Every sample gets a type** from its name and folders: Kick, Snare, Clap, Rim, Closed/Open Hat, Cymbal, 808, Tom, Perc, FX, Vox, Instrument, Drum Loop, Break, Hat Loop, Perc Loop, Melodic Loop. BPM and key are also read from names. On a 51,407-file drum library: indexed in 2.7 s, 91% typed.

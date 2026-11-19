@@ -248,6 +248,9 @@ public:
     juce::String getMidiLearnTarget() const                     { return learnTarget; }
     juce::String describeMidiBindings (const juce::String& target) const;
     void applyMpkMiniMk2Template(); // measured from a connected MPK mini mk2 (see .cpp)
+    // Jog chop on the MPK mini mk2: K5 / K6 (CC5 / CC6, ch 1) drive the START / END jog knobs; off restores LFO depth / rate.
+    void setJogOnMpk (bool on);
+    bool isJogOnMpk() const;
 
     // Hardware pads: the controller notes of hardware pads 1..16. With "pads follow bank" on, hardware pad n plays
     // NEURO pad n of the selected bank (by position, like MPC pads). Learn by hitting the 16 pads in NEURO pad order.
@@ -280,6 +283,10 @@ public:
     bool applyDetectedKey();                                    // sets the song key from the best guess now (ignores the lock)
     // The stem-split key of this sample if known, else its own. Confident only, unless allowUncertain (a best guess).
     std::optional<neuro::KeyEstimate> getBestKeyEstimate (bool* fromStems = nullptr, bool allowUncertain = false) const;
+    // The key written in the sample's file name ("... 120bpm Bmin ...", "F#maj", "G Minor"): packs label keys reliably,
+    // more reliably than any audio analysis of a single stem. {tonic, minor}, or nullopt.
+    std::optional<std::pair<int, bool>> getNamedKey() const;
+    void setSongKey (int tonic, bool minor);
     int getEffectiveKeyRoot() const noexcept;                   // the Play In key if set, else the song key root
     int getKeyShift() const noexcept;                           // Play In shift, -6 .. +5 semitones
     // Chords (v1.9): the chord pad n (0..15 of a bank) plays in the current key and shape; the last chord played (or -1).

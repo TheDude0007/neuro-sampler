@@ -1786,6 +1786,50 @@ int main()
         toneFile.deleteFile();
     }
 
+    // ---- v1.11 Jog chop: START / END knobs move the selected slice's markers by fine steps; MPK K5/K6 mapping ----
+    {
+        NeuroMPCProcessor jg;
+        jg.prepareToPlay (rate, block);
+        auto tone = writeToneWav (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("neuro_jog.wav"), 220.0, 1.0);
+        CHECK (jg.loadSample (tone, error));
+        jg.editSlices ([] (auto& set) { set.grid (4); });       // starts 0, 12000, 24000, 36000
+        std::unique_ptr<juce::AudioProcessorEditor> ed (jg.createEditor());
+        auto* e = dynamic_cast<NeuroMPCEditor*> (ed.get());
+        e->selectSliceForTest (1);
+        e->jogForTest (0, 3.0, 1, false);                         // start +3 samples
+        CHECK (jg.getSlices().getSlices()[1].startSample == 12003 && jg.getSlices().getSlices()[0].endSample == 12003);
+        e->jogForTest (1, -2.0, 3, false);                        // end -2 ms = -96 samples
+        CHECK (jg.getSlices().getSlices()[2].startSample == 24000 - 96);
+        e->jogForTest (0, 5.0, 2, true);                          // +0.5 ms, landing on a zero crossing
+        const auto pos = jg.getSlices().getSlices()[1].startSample;
+        const auto* x = jg.getSample()->buffer.getReadPointer (0);
+        CHECK (std::abs (pos - (12003 + 24)) <= 96 && (x[pos - 1] <= 0.0f) != (x[pos] <= 0.0f));
+        e->selectSliceForTest (0);
+        e->jogForTest (0, 10.0, 1, false);                        // the first slice: its start cuts the head off
+        CHECK (jg.getSlices().size() == 5 && jg.getSlices().getSlices()[1].startSample == neuro::SliceSet::minSliceLength);
+        e->selectSliceForTest (4);
+        e->jogForTest (1, -1.0, 4, false);                        // the last slice: its end cuts the tail off (-10 ms)
+        CHECK (jg.getSlices().size() == 6 && jg.getSlices().getSlices()[5].startSample == 48000 - 480);
+        jg.setJogOnMpk (true);
+        CHECK (jg.isJogOnMpk());
+        jg.setJogOnMpk (false);
+        CHECK (! jg.isJogOnMpk());
+        tone.deleteFile();
+    }
+
+    // ---- v1.11 Key from the file name: a labelled loop sets the song key from its name, not from the analysis ----
+    {
+        auto named = writeToneWav (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("loop 120bpm Bbmin test.wav"), 220.0, 1.0);
+        NeuroMPCProcessor nk;
+        nk.prepareToPlay (rate, block);
+        CHECK (nk.loadSample (named, error) && nk.waitForBackgroundWork (20000));
+        nk.processBackgroundResults();
+        CHECK (nk.getNamedKey() == std::optional (std::pair (10, true)));
+        CHECK ((int) nk.apvts.getRawParameterValue (ParamIDs::scaleRoot)->load() == 10
+               && (int) nk.apvts.getRawParameterValue (ParamIDs::scale)->load() == neuro::scaleNaturalMinor);
+        named.deleteFile();
+    }
+
     // ---- v1.10 Sample library: preview through the output; Kit -> pads builds one WAV, a slice per sound, named pads ----
     {
         const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory);

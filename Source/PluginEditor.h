@@ -27,6 +27,13 @@ public:
     std::vector<juce::Component*> getMappableControls() const;
     int countUnmappableControls() const;          // buttons/sliders/selectors without a mapping ID (should be 0)
     void runMappedAction (int uiIndex, float value); // value 0..1 = CC, -1 = note trigger
+    void jogForTest (int side, double steps, int stepMode, bool zeroCross)
+    {
+        jogStep.setSelectedId (stepMode, juce::dontSendNotification);
+        jogZero.setToggleState (zeroCross, juce::dontSendNotification);
+        jogMarker (side, steps);
+    }
+    void selectSliceForTest (int i) { waveform.setSelectedSlice (i); }
     void showLibrary (bool show) { libraryButton.setToggleState (show, juce::sendNotificationSync); }
     void showTab (int index) { showPanel ((Panel) juce::jlimit (0, (int) Panel::chord, index)); } // 0 slice .. 6 kit, 7 chop, 8 chord
 
@@ -104,6 +111,16 @@ private:
     juce::TextButton chopButton { "Chop" }, slicesToPads { "Slices -> pads" }, chopKitToPads { "Kit -> pads" };
     juce::ToggleButton chopSnap { "Snap to hits" }, repeatLatch { "Latch" };
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> chopAttachments;
+    // Jog chop (v1.11): endless knobs that move the selected slice's start (left) and end (right) very finely.
+    juce::Slider jogLeft { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox },
+                 jogRight { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox };
+    juce::ComboBox jogStep;
+    juce::ToggleButton jogZero { "Zero-cross" }, jogMpk { "Knobs on MPK K5/K6" };
+    juce::Label jogInfo, jogLeftLabel, jogRightLabel;
+    std::array<double, 2> jogLast { 64.0, 64.0 };
+    double jogAuditionAt = 0.0;
+    int jogAuditionTag = -1;   // ms; audition the slice once the knobs rest
+    void jogMarker (int side, double delta);
     void forEachScopedLane (const std::function<void (neuro::SeqLane&, int)>&, NeuroMPCProcessor::Undo);
     std::vector<juce::Component*> evolvePanelComponents();
     void editSelectedSeqStep (const std::function<void (neuro::SeqStep&)>&);

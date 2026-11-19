@@ -16,6 +16,8 @@ public:
     void sampleChanged();
     int getSelectedSlice() const noexcept { return selected; }
     void setSelectedSlice (int index)     { selected = index; repaint(); }
+    // Jog chop: show `span` samples centred on `sample` (fine view of the marker being moved).
+    void focusOn (int64_t sample, int64_t span);
     std::function<void()> onSliceClicked;
 
     void paint (juce::Graphics&) override;

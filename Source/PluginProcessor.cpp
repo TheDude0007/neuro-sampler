@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Core/SampleCategory.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include "PluginEditor.h"
 #include "Core/Scales.h"
@@ -1244,6 +1245,21 @@ void NeuroMPCProcessor::applyMpkMiniMk2Template()
         auto* p = apvts.getParameter (id);
         p->setValueNotifyingHost (p->convertTo0to1 (value));
     }
+}
+
+void NeuroMPCProcessor::setJogOnMpk (bool on)
+{
+    editMidiMap ([on] (auto& map)
+    {
+        map.learn (on ? "ui:chop.jogStart" : std::string ("param:") + ParamIDs::lfoDepth, neuro::MidiBinding::Source::cc, 1, 5);
+        map.learn (on ? "ui:chop.jogEnd" : std::string ("param:") + ParamIDs::lfoRate, neuro::MidiBinding::Source::cc, 1, 6);
+    });
+}
+
+bool NeuroMPCProcessor::isJogOnMpk() const
+{
+    const auto i = midiMap.find (neuro::MidiBinding::Source::cc, 1, 5);
+    return i >= 0 && midiMap.getBindings()[(size_t) i].target == "ui:chop.jogStart";
 }
 
 void NeuroMPCProcessor::setHardwarePadNotes (const std::array<int, neuro::padsPerBank>& notes)
@@ -2496,6 +2512,25 @@ void NeuroMPCProcessor::setSongKey (const neuro::KeyEstimate& key)
     set (ParamIDs::scale, (float) (key.candidates[0].minor ? neuro::scaleNaturalMinor : neuro::scaleMajor));
 }
 
+std::optional<std::pair<int, bool>> NeuroMPCProcessor::getNamedKey() const
+{
+    if (sample == nullptr)
+        return std::nullopt;
+
+    auto name = sample->file.getFileNameWithoutExtension();
+    if (name.endsWithIgnoreCase (".wav") || name.endsWithIgnoreCase (".aif") || name.endsWithIgnoreCase (".mp3"))
+        name = name.dropLastCharacters (4); // "loop.wav.m4a" (Apple Music exports)
+    const auto info = neuro::classifySample (name.toStdString(), {});
+    return info.keyNamed && info.keyPc >= 0 ? std::optional (std::pair (info.keyPc, info.minor)) : std::nullopt;
+}
+
+void NeuroMPCProcessor::setSongKey (int tonic, bool minor)
+{
+    neuro::KeyEstimate k;
+    k.candidates[0] = { tonic, minor, 1.0f };
+    setSongKey (k);
+}
+
 bool NeuroMPCProcessor::applyDetectedKey()
 {
     const auto key = getBestKeyEstimate (nullptr, true);
@@ -2667,8 +2702,12 @@ void NeuroMPCProcessor::processBackgroundResults()
         autoKeyPending = false;
 
         if (songKeyLockParam->load() < 0.5f)
-            if (const auto key = getBestKeyEstimate())
+        {
+            if (const auto named = getNamedKey())
+                setSongKey (named->first, named->second); // the file says its key: trust it over the analysis
+            else if (const auto key = getBestKeyEstimate())
                 setSongKey (*key);
+        }
     }
 
     // Variant renders depend on analysis (which slices are musical/tonal), the key change and the Chord-Lock mode.
