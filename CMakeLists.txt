@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Target architectures")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(NEURO_MPC VERSION 1.9.0 LANGUAGES C CXX)
+project(NEURO_MPC VERSION 1.10.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,7 +59,8 @@ target_sources(NEURO_MPC PRIVATE
     Source/PluginEditor.cpp
     Source/Audio/VoiceEngine.cpp
     Source/DSP/TimeStretch.cpp
-    Source/UI/WaveformView.cpp)
+    Source/UI/WaveformView.cpp
+    Source/Library/SampleLibrary.cpp)
 
 target_include_directories(NEURO_MPC PRIVATE Source)
 
@@ -96,7 +97,8 @@ target_sources(neuro_engine_tests PRIVATE
     Source/PluginEditor.cpp
     Source/Audio/VoiceEngine.cpp
     Source/DSP/TimeStretch.cpp
-    Source/UI/WaveformView.cpp)
+    Source/UI/WaveformView.cpp
+    Source/Library/SampleLibrary.cpp)
 target_include_directories(neuro_engine_tests PRIVATE Source)
 target_compile_definitions(neuro_engine_tests PRIVATE
     JucePlugin_Name="Neuro Sampler Suite"
@@ -121,7 +123,8 @@ target_sources(neuro_field_test PRIVATE
     Source/PluginEditor.cpp
     Source/Audio/VoiceEngine.cpp
     Source/DSP/TimeStretch.cpp
-    Source/UI/WaveformView.cpp)
+    Source/UI/WaveformView.cpp
+    Source/Library/SampleLibrary.cpp)
 target_include_directories(neuro_field_test PRIVATE Source)
 target_compile_definitions(neuro_field_test PRIVATE
     JucePlugin_Name="Neuro Sampler Suite"

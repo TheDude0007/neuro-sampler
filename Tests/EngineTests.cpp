@@ -1786,6 +1786,33 @@ int main()
         toneFile.deleteFile();
     }
 
+    // ---- v1.10 Sample library: preview through the output; Kit -> pads builds one WAV, a slice per sound, named pads ----
+    {
+        const auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+        auto a = writeToneWav (tmp.getChildFile ("neuro_kit_a.wav"), 110.0, 0.5);
+        auto b = writeToneWav (tmp.getChildFile ("neuro_kit_b.wav"), 220.0, 0.25);
+        auto c = writeToneWav (tmp.getChildFile ("neuro_kit_c.wav"), 440.0, 0.3);
+        NeuroMPCProcessor lib;
+        lib.prepareToPlay (rate, block);
+        lib.previewFile (b);                                      // no sample loaded: the preview still plays
+        auto x = capture (lib, 8, {});
+        CHECK (lib.isPreviewing() && std::any_of (x.begin(), x.end(), [] (float v) { return std::abs (v) > 0.01f; }));
+        lib.stopPreview();
+        x = capture (lib, 2, {});
+        CHECK (! lib.isPreviewing() && std::all_of (x.begin(), x.end(), [] (float v) { return v == 0.0f; }));
+
+        CHECK (lib.buildKit ({ a, b, juce::File(), c }, "Test kit", error));
+        const auto& set = lib.getSlices();
+        std::printf ("  kit: %d slices from 3 sounds + 1 empty pad, %s\n", set.size(), lib.getSample()->file.getFileName().toRawUTF8());
+        CHECK (set.size() == 4 && lib.getSample()->file.getParentDirectory() == NeuroMPCProcessor::kitsFolder());
+        CHECK (set.getSlices()[0].endSample - set.getSlices()[0].startSample == 24000 + 2400);    // 0.5 s + 50 ms gap
+        CHECK (lib.getPads()[0].name == "neuro_kit_a" && lib.getPads()[3].name == "neuro_kit_c" && lib.getPads()[2].name.empty());
+        x = capture (lib, 40, { { 1, 37, 1.0f } });                // pad A2 plays sound b (220 Hz)
+        CHECK (std::abs (midiOf (x, 1024, 4096) - 57.0) < 0.1);
+        lib.getSample()->file.deleteFile();
+        for (auto* f : { &a, &b, &c }) f->deleteFile();
+    }
+
     // ---- Separate drums (NMF): simultaneous hits -> both lanes; isolated stems on their own outputs; stems sum back ----
     {
         juce::AudioBuffer<float> mix (1, (int) rate * 2);   // 1 bar at 120 BPM: kick 1/3, snare 2/4, hats every 8th

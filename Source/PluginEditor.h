@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "UI/GesturePad.h"
+#include "UI/LibraryPanel.h"
 #include "UI/Theme.h"
 #include "UI/RepeatPad.h"
 #include "UI/SeqGrid.h"
@@ -26,6 +27,7 @@ public:
     std::vector<juce::Component*> getMappableControls() const;
     int countUnmappableControls() const;          // buttons/sliders/selectors without a mapping ID (should be 0)
     void runMappedAction (int uiIndex, float value); // value 0..1 = CC, -1 = note trigger
+    void showLibrary (bool show) { libraryButton.setToggleState (show, juce::sendNotificationSync); }
     void showTab (int index) { showPanel ((Panel) juce::jlimit (0, (int) Panel::chord, index)); } // 0 slice .. 6 kit, 7 chop, 8 chord
 
 private:
@@ -117,6 +119,8 @@ private:
 
     NeuroMPCProcessor& proc;
     WaveformView waveform { proc };
+    LibraryPanel libraryPanel { proc };   // sample library browser, opens over the waveform
+    juce::TextButton libraryButton { "Library" };
     juce::TextButton loadButton { "Load" }, autoButton { "Auto-Slice" }, gridButton { "Grid" }, clearButton { "Clear" },
                      savePresetButton { "Save" }, relinkButton { "Relink..." }, midiLearnButton { "MIDI Learn" }, midiMenuButton { "MIDI" };
     std::vector<juce::Component*> uiControls; // "ui:" controls, in the order registered with the processor

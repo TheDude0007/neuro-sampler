@@ -60,5 +60,5 @@ The CHORD tab shows the chord just played (for example "Am  vi") and the chord c
 - **Drums:** a slice classed as a drum is not harmonized.
 
 ## Not yet (roadmap)
-- **v1.10:** a theory brain that suggests "what comes next" chords, plus MIDI chord in/out.
-- **v1.11:** a melodic engine (a progression-aware arp, Tonnetz walks, Euclidean and harmonic-series patterns).
+- **v1.11:** a theory brain that suggests "what comes next" chords, plus MIDI chord in/out.
+- **v1.12:** a melodic engine (a progression-aware arp, Tonnetz walks, Euclidean and harmonic-series patterns).

@@ -13,12 +13,13 @@ C++20 · JUCE 9.0.4 (pinned) · CMake · AGPL-3.0.
 4. **Upgrading from NEURO MPC (v1.3.0 or earlier)?** Delete the old `NEURO MPC.vst3`, `NEURO MPC.component` and `NEURO MPC.app` first. It's the same plugin under its new name, so your projects and presets still open.
 5. Rescan plugins in your host: Logic, Live or MPC 3. To run alongside an MPC, see [Documentation/MPC.md](Documentation/MPC.md).
 
-## Status: v1.9.0, public MVP + GW-1 / KAOSS NEXUS link
+## Status: v1.10.0, public MVP + GW-1 / KAOSS NEXUS link
 
 The acceptance status of each requirement, with evidence, is in [Documentation/ACCEPTANCE.md](Documentation/ACCEPTANCE.md). **Still open:** hands-on sessions in MPC 3, Ableton Live and Logic Pro (checklist in [MPC.md](Documentation/MPC.md)), notarization. pluginval strictness 10 passes on the VST3 and AU. See [RELEASE_REDTEAM.md](Documentation/RELEASE_REDTEAM.md).
 
 | Feature | |
 |---|---|
+| Sample library | **Library** button: sections of your own folders indexed in place (51k files in 2.7 s); 18 sample types, BPM and key read from names; search, type and pack filters, preview, load; 16-pad kit builder with **Auto kit** (MPC order, same pack) and **Kit -> pads**. See [Documentation/LIBRARY.md](Documentation/LIBRARY.md) |
 | Sample import | WAV/AIFF/FLAC/OGG/MP3 via JUCE + CoreAudio; drag-and-drop or Load; mono and stereo (first 2 ch); ≤200M floats |
 | Waveform | Multiresolution peaks (AudioThumbnail), zoom (wheel/pinch around the cursor), horizontal pan, live playhead |
 | Slicing | Double-click to split, drag a marker to move, right-click a marker to remove; Auto-Slice (transients, sensitivity slider); Grid 4–64; Clear |
@@ -53,7 +54,7 @@ The acceptance status of each requirement, with evidence, is in [Documentation/A
 | [ARCHITECTURE](Documentation/ARCHITECTURE.md) | threads, ownership, block processing, modules |
 | [BUILD](Documentation/BUILD.md) · [TESTING](Documentation/TESTING.md) · [ACCEPTANCE](Documentation/ACCEPTANCE.md) | build, test and release status |
 | [TIME_STRETCHING](Documentation/TIME_STRETCHING.md) · [PITCH_ANALYSIS](Documentation/PITCH_ANALYSIS.md) · [PITCH_SHIFTING](Documentation/PITCH_SHIFTING.md) | DSP, with measured results |
-| [PADS](Documentation/PADS.md) · [CHORDS](Documentation/CHORDS.md) · [ARPEGGIATOR](Documentation/ARPEGGIATOR.md) · [SEQUENCER](Documentation/SEQUENCER.md) · [KIT](Documentation/KIT.md) | performance features |
+| [PADS](Documentation/PADS.md) · [CHORDS](Documentation/CHORDS.md) · [LIBRARY](Documentation/LIBRARY.md) · [ARPEGGIATOR](Documentation/ARPEGGIATOR.md) · [SEQUENCER](Documentation/SEQUENCER.md) · [KIT](Documentation/KIT.md) | performance features |
 | [MPC](Documentation/MPC.md) · [RELEASE_REDTEAM](Documentation/RELEASE_REDTEAM.md) · [SPRINT_MVP](Documentation/SPRINT_MVP.md) | MPC sync, release review, MVP sprint |
 | [STATE_AND_AUTOMATION](Documentation/STATE_AND_AUTOMATION.md) · [MIDI_MAPPING](Documentation/MIDI_MAPPING.md) · [LICENSES](Documentation/LICENSES.md) | parameters, state, presets, MIDI learn, licences |
 | [CONTRIBUTING](CONTRIBUTING.md) · [CHANGELOG](CHANGELOG.md) · [SECURITY](SECURITY.md) | project |

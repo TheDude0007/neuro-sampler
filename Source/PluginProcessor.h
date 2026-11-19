@@ -184,6 +184,15 @@ public:
     // Kit -> pads: the best hit of each recognised drum on bank A in MPC order (A1 Kick, A2 Snare, A3 Closed Hat...),
     // the other hits on banks B-D, named and coloured. Done after Deconstruct / Separate drums; returns pads assigned.
     int assignKitToPads();
+
+    // Sample library (v1.10): audition a file through the plugin's output (message thread; stops the previous one).
+    void previewFile (const juce::File&);
+    void stopPreview();
+    bool isPreviewing() const noexcept { return previewActive.load(); }
+    // Builds one kit WAV from up to 128 one-shots (empty File = empty pad: silence) in ~/Music/NEURO MPC/Kits/, loads it
+    // with a slice per sound, puts slice n on pad n and names the pads. Returns false (and error) if nothing loads.
+    bool buildKit (const std::vector<juce::File>& sounds, const juce::String& name, juce::String& error);
+    static juce::File kitsFolder();
     // 16 Levels (MPC): one slice on all 16 pads of a bank. mode 1 = velocity (fixed levels 1/16 .. 16/16), 2 = tune
     // (-8 .. +7 semitones, pad 9 = original).
     void sixteenLevels (int sliceIndex, int mode, int bank);
@@ -325,6 +334,12 @@ private:
     struct CacheEntry { neuro::StretchEntry entry; uint64_t lastUse = 0; };
     neuro::BackgroundWorker<neuro::StretchJob, neuro::StretchDone> stretchRenderer { "NEURO stretch", neuro::renderStretchJob };
     neuro::RtShared<neuro::StretchBank> rtStretch;
+    struct PreviewClip { juce::AudioBuffer<float> audio; double rate = 44100.0; };
+    neuro::RtShared<PreviewClip> rtPreview;
+    const PreviewClip* lastPreview = nullptr; // audio thread
+    double previewPos = 0.0;                  // audio thread
+    std::atomic<bool> previewActive { false };
+    void renderPreview (juce::AudioBuffer<float>& mainBus) noexcept;
     std::shared_ptr<const neuro::StretchBank> stretchBank;
     std::vector<CacheEntry> stretchCache;
     std::vector<neuro::StretchKey> stretchRequested;

@@ -125,8 +125,21 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
                                                              &halfButton, &doubleButton, &resetButton, &allButton,
                                                              &preserveTransients, &pitchInfo, &rootNote,
                                                              &octaveDown, &octaveUp, &semitoneInfo, &fineCents, &pitchMode,
-                                                             &keyMode, &scale, &scaleRoot, &lfoShape, &lfoSync, &playKey, &keyMenu })
+                                                             &keyMode, &scale, &scaleRoot, &lfoShape, &lfoSync, &playKey, &keyMenu, &libraryButton })
         addAndMakeVisible (c);
+
+    // Sample library: a browser over the waveform (your folders, by type / pack / BPM / key; preview; kit builder).
+    addChildComponent (libraryPanel);
+    libraryPanel.setComponentID ("nomap"); // a file browser, not a performance control (the Library button is mappable)
+    libraryButton.setClickingTogglesState (true);
+    libraryButton.setTooltip ("Sample library: browse your sample folders, preview, load, or build a kit on the pads");
+    libraryButton.onClick = [this]
+    {
+        libraryPanel.setVisible (libraryButton.getToggleState());
+        if (libraryPanel.isVisible()) libraryPanel.toFront (true);
+    };
+    libraryPanel.onClose = [this] { libraryButton.setToggleState (false, juce::dontSendNotification); };
+    libraryPanel.onLoaded = [this] { updateChopPanel(); };
 
     for (int pc = 0; pc < 12; ++pc)
     {
@@ -1337,7 +1350,7 @@ void NeuroMPCEditor::registerMappables()
     auto id = [] (juce::Component& c, const juce::String& name) { c.setComponentID ("ui:" + name); };
 
     for (auto [c, name] : std::initializer_list<std::pair<juce::Component*, const char*>> {
-             { &loadButton, "sample.load" }, { &autoButton, "slice.auto" }, { &sensitivity, "slice.sensitivity" },
+             { &loadButton, "sample.load" }, { &libraryButton, "view.library" }, { &autoButton, "slice.auto" }, { &sensitivity, "slice.sensitivity" },
              { &gridDivisions, "slice.gridDivisions" }, { &gridButton, "slice.grid" }, { &clearButton, "slice.clear" },
              { &presetBox, "preset.select" }, { &savePresetButton, "preset.save" }, { &relinkButton, "sample.relink" },
              { &stretch, "slice.stretch" }, { &halfButton, "slice.stretchHalf" }, { &doubleButton, "slice.stretchDouble" },
@@ -2709,13 +2722,13 @@ void NeuroMPCEditor::resized()
     auto top = area.removeFromTop (34);
     topDeck = top;
 
-    for (auto* b : { &loadButton, &autoButton })
+    for (auto* b : { &loadButton, &libraryButton, &autoButton })
     {
-        b->setBounds (top.removeFromLeft (90));
+        b->setBounds (top.removeFromLeft (b == &autoButton ? 84 : 64));
         top.removeFromLeft (6);
     }
 
-    sensitivity.setBounds (top.removeFromLeft (110));
+    sensitivity.setBounds (top.removeFromLeft (84));
     top.removeFromLeft (12);
     gridDivisions.setBounds (top.removeFromLeft (110));
     top.removeFromLeft (6);
@@ -2740,6 +2753,7 @@ void NeuroMPCEditor::resized()
     area.removeFromTop (8);
     auto bottom = area.removeFromBottom (juce::jmin (460, area.getHeight() * 3 / 5));
     waveform.setBounds (area.withTrimmedBottom (8));
+    libraryPanel.setBounds (waveform.getBounds());
 
     // Bank selector (A-H) over the pads, Note Repeat under them; bottom row = pad 1 as on MPC hardware.
     auto padColumn = bottom.removeFromLeft (juce::jmin (300, bottom.getHeight() - 56));

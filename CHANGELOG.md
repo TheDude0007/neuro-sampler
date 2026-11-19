@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.10.0 (2026-11-19): Sample library
+- **Library** (top bar): a browser for your own sample folders, organised in sections (Drums, Melodies, …). Folders are indexed in place; nothing is copied.
+- **Every sample gets a type** from its name and folders: Kick, Snare, Clap, Rim, Closed/Open Hat, Cymbal, 808, Tom, Perc, FX, Vox, Instrument, Drum Loop, Break, Hat Loop, Perc Loop, Melodic Loop. BPM and key are also read from names. On a 51,407-file drum library: indexed in 2.7 s, 91% typed.
+- **Search** across the library, filter by type and pack, click to preview, double-click to load.
+- **Kit builder:**
+  - put one-shots on 16 kit pads;
+  - **Auto kit** picks a full kit in MPC order, from one pack (**Same pack**) when it can;
+  - **Kit -> pads** turns it into one kit WAV with a slice per pad, with the pads named after the sounds.
+
+
 ## 1.9.0 (2026-11-19): Chords
 - **New CHORD tab.** Chords are built from the song key, so they're always in key.
 - **Harmonize:** every pitched slice plays the key's chord on its own note (A in C major plays A minor). This works from pads, Keys mode, the arp and the sequencer. Drums stay single.

@@ -819,6 +819,162 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     gainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (gainParam->load()));
     gainSmoothed.applyGain (buffer, buffer.getNumSamples());
+    renderPreview (mainBus); // library audition: after the gain, so it is heard at the same level whatever the mix
+}
+
+void NeuroMPCProcessor::renderPreview (juce::AudioBuffer<float>& out) noexcept
+{
+    const auto* clip = rtPreview.acquire();
+
+    if (clip != lastPreview)
+    {
+        lastPreview = clip;
+        previewPos = 0.0;
+    }
+
+    if (clip == nullptr || clip->audio.getNumSamples() < 2)
+        return;
+
+    const auto len = clip->audio.getNumSamples();
+    const auto step = clip->rate / hostSampleRate;
+    const auto srcChannels = clip->audio.getNumChannels();
+
+    for (int i = 0; i < out.getNumSamples() && previewPos < len - 1; ++i, previewPos += step)
+    {
+        const auto idx = (int) previewPos;
+        const auto frac = (float) (previewPos - idx);
+
+        for (int ch = 0; ch < out.getNumChannels(); ++ch)
+        {
+            const auto* src = clip->audio.getReadPointer (juce::jmin (ch, srcChannels - 1));
+            out.addSample (ch, i, 0.7f * (src[idx] + frac * (src[idx + 1] - src[idx])));
+        }
+    }
+
+    if (previewPos >= len - 1)
+        previewActive = false;
+}
+
+void NeuroMPCProcessor::previewFile (const juce::File& file)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+
+    if (reader == nullptr || reader->lengthInSamples <= 0)
+    {
+        stopPreview();
+        return;
+    }
+
+    auto clip = std::make_shared<PreviewClip>();
+    const auto length = (int) juce::jmin<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * 20.0)); // 20 s max
+    clip->audio.setSize ((int) juce::jmin (2u, reader->numChannels), length);
+    clip->rate = reader->sampleRate;
+    reader->read (&clip->audio, 0, length, 0, true, clip->audio.getNumChannels() > 1);
+    rtPreview.publish (clip);
+    previewActive = true;
+}
+
+void NeuroMPCProcessor::stopPreview()
+{
+    rtPreview.publish (nullptr);
+    previewActive = false;
+}
+
+juce::File NeuroMPCProcessor::kitsFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("NEURO MPC/Kits");
+}
+
+bool NeuroMPCProcessor::buildKit (const std::vector<juce::File>& sounds, const juce::String& name, juce::String& error)
+{
+    constexpr double kitRate = 48000.0;
+    constexpr int gap = 2400;               // 50 ms of silence after each sound: no bleed into the next slice
+    constexpr double maxSeconds = 6.0;      // per sound
+    std::vector<juce::AudioBuffer<float>> parts;
+    juce::StringArray names;
+    int total = 0, loaded = 0;
+
+    for (const auto& f : sounds)
+    {
+        juce::AudioBuffer<float> part (2, gap); // an empty pad keeps its place as a short silence
+        part.clear();
+        juce::String label;
+
+        if (f != juce::File())
+            if (std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (f)); reader != nullptr && reader->lengthInSamples > 0)
+            {
+                const auto srcLen = (int) juce::jmin<juce::int64> (reader->lengthInSamples, (juce::int64) (reader->sampleRate * maxSeconds));
+                juce::AudioBuffer<float> src ((int) juce::jmin (2u, reader->numChannels), srcLen);
+                reader->read (&src, 0, srcLen, 0, true, src.getNumChannels() > 1);
+                const auto ratio = reader->sampleRate / kitRate;
+                const auto outLen = juce::jmax (1, (int) std::floor (srcLen / ratio));
+                part.setSize (2, outLen + gap);
+                part.clear();
+
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    juce::LagrangeInterpolator interp;
+                    interp.process (ratio, src.getReadPointer (juce::jmin (ch, src.getNumChannels() - 1)), part.getWritePointer (ch), outLen);
+                }
+
+                label = f.getFileNameWithoutExtension();
+                ++loaded;
+            }
+
+        total += part.getNumSamples();
+        parts.push_back (std::move (part));
+        names.add (label);
+    }
+
+    if (loaded == 0)
+    {
+        error = "None of the kit sounds could be read";
+        return false;
+    }
+
+    juce::AudioBuffer<float> kit (2, total);
+    std::vector<int64_t> starts;
+    int at = 0;
+
+    for (const auto& part : parts)
+    {
+        if (at > 0)
+            starts.push_back (at);
+
+        for (int ch = 0; ch < 2; ++ch)
+            kit.copyFrom (ch, at, part, ch, 0, part.getNumSamples());
+
+        at += part.getNumSamples();
+    }
+
+    kitsFolder().createDirectory();
+    const auto file = kitsFolder().getNonexistentChildFile (juce::File::createLegalFileName (name.isEmpty() ? "Kit" : name), ".wav", false);
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream (file.createOutputStream().release());
+        auto options = juce::AudioFormatWriterOptions().withSampleRate (kitRate).withNumChannels (2).withBitsPerSample (24);
+        auto writer = wav.createWriterFor (stream, options);
+
+        if (writer == nullptr || ! writer->writeFromAudioSampleBuffer (kit, 0, kit.getNumSamples()))
+        {
+            error = "Could not write " + file.getFullPathName();
+            return false;
+        }
+    }
+
+    if (! loadSample (file, error))
+        return false;
+
+    editSlices ([&] (auto& set) { set.setStarts (starts); });
+    editPads ([&] (auto& bank)
+    {
+        bank.followSlices = true;
+        bank.autoAssign (getSlices());
+
+        for (int i = 0; i < neuro::numPads; ++i)
+            bank[i].name = i < names.size() ? names[i].substring (0, 24).toStdString() : std::string();
+    });
+    return true;
 }
 
 // Renders [from, to) in chunks, filling the per-sample global pitch offset: transpose + fine + bend + LFO.

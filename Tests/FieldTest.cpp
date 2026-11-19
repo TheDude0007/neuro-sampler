@@ -151,6 +151,28 @@ namespace
         std::printf ("snapshot: %s\n", file.getFullPathName().toRawUTF8());
     }
 
+    // Library browser snapshot (v1.10): indexes the configured sections, then shows the panel.
+    void librarySnapshot (const juce::File& outDir)
+    {
+        NeuroMPCProcessor p;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+        auto* editor = dynamic_cast<NeuroMPCEditor*> (ed.get());
+        editor->setSize (1140, 840);
+        juce::SharedResourcePointer<neuro::SampleLibrary> library;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        editor->showLibrary (true);                      // starts the index
+        while (library->isScanning()) juce::Thread::sleep (50);
+        std::printf ("indexed %d samples in %.1f s\n", library->size(), (juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0);
+        editor->showLibrary (false);
+        editor->showLibrary (true);                      // shows the fresh index
+        const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        const auto file = outDir.getChildFile ("library.png");
+        file.deleteFile();
+        juce::FileOutputStream out (file);
+        juce::PNGImageFormat().writeImageToStream (image, out);
+        std::printf ("snapshot: %s\n", file.getFullPathName().toRawUTF8());
+    }
+
     // Loads the installed plugin binary through the real VST3 / AU hosting APIs and checks the per-class outputs.
     void hostedOutputs (const juce::String& formatName, const juce::String& wav)
     {
@@ -261,6 +283,7 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI init;
     if (argc == 3 && juce::String (argv[1]) == "workflow") { workflow (argv[2], false); workflow (argv[2], true); return 0; }
+    if (argc == 3 && juce::String (argv[1]) == "library") { librarySnapshot (juce::File (argv[2])); return 0; }
     if (argc == 4 && juce::String (argv[1]) == "chords") { chordSnapshot (juce::File (argv[2]), argv[3]); return 0; }
     if (argc < 4) { std::printf ("usage: neuro_field_test <outDir> <kitWav> <loop>...\n"); return 1; }
     const juce::File outDir (argv[1]);

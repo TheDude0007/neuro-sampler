@@ -11,6 +11,7 @@
 #include "Core/RtShared.h"
 #include "Core/Scales.h"
 #include "Core/Sequencer.h"
+#include "Core/SampleCategory.h"
 #include "Core/Timbre.h"
 #include "Core/SliceSet.h"
 #include "Core/TransientDetector.h"
@@ -1393,8 +1394,42 @@ static void chordTests()
     CHECK (detectChord ({}, {}).status == ChordEstimate::Status::none);
 }
 
+// Sample library: type, BPM and key from real pack naming (file name first, then folders, innermost first).
+static void sampleCategoryTests()
+{
+    using T = neuro::SampleType;
+    auto type = [] (const char* name, std::vector<std::string> folders = {}) { return neuro::classifySample (name, folders).type; };
+    CHECK (type ("KWKIK066", { "The Lunch77 Kanye West Drumkit", "Kicks" }) == T::kick);
+    CHECK (type ("808 (Zay)", { "Zaytoven Drumkit", "808s" }) == T::bass808);
+    CHECK (type ("Snares (6)", { "Boi-1da Kit", "01 Snares" }) == T::snare);
+    CHECK (type ("HH_09", { "CRYPTIC DRUM STASH 01", "HH" }) == T::closedHat);
+    CHECK (type ("VDUB2 Open Hihat 021", { "VDUB2 Cymbals", "VDUB2 Open Hihat" }) == T::openHat);
+    CHECK (type ("ph - oh - grafias", { "posthuman", "04 - oh" }) == T::openHat);
+    CHECK (type ("Crash_02", { "Hats & Cymbals (27)" }) == T::cymbal);
+    CHECK (type ("Sha $_kd_ (72)", { "Sha Money Kyx" }) == T::kick);
+    CHECK (type ("ARAAB_KICK_N2K31", { "KICKS & BREAKS" }) == T::kick);                  // a one-shot in a mixed folder
+    CHECK (type ("Cymatics - Trap Hihat Loop 4 - 125 BPM", { "Hihat Loops" }) == T::hatLoop);
+    CHECK (type ("105_32", { "HipHop", "bpm105" }) == T::drumLoop);
+    CHECK (type ("Break31 Loop10 93bpm", { "Break31 93bpm" }) == T::breakLoop);
+    CHECK (type ("Onlyxne_Percloop_g.king 169", { "Percussion Loops" }) == T::percLoop);
+    CHECK (type ("SF Wurli 04", { "Synth Sequences, Keyboards, etc" }) == T::instrument);
+    CHECK (type ("Bid Grums 130 bpm(a)", { "Sounds in HD  High Impact", "Various Loops" }) == T::drumLoop); // folder FX word ignored for a loop
+    const auto loop = neuro::classifySample ("Cymatics - Trap Hihat Loop 4 - 125 BPM", {});
+    CHECK (loop.bpm == 125);
+    CHECK (neuro::classifySample ("bpm095", {}).bpm == 95 && neuro::classifySample ("DrumLoop_KCUF_108BPM", {}).bpm == 108);
+    const auto key = neuro::classifySample ("Enough Love - 153 BPM E Min", {});
+    CHECK (key.keyPc == 4 && key.minor && key.bpm == 153);
+    const auto bracket = neuro::classifySample ("808_TOLIVERSPINZ (C)", {});
+    CHECK (bracket.keyPc == 0 && bracket.type == T::bass808);
+    CHECK (neuro::classifySample ("Aahs Kanye  Bm [d# f# b]", { "Vox" }).keyPc == 11);
+    CHECK (neuro::classifySample ("Kick 3", {}).keyPc == -1);
+    const auto spelled = neuro::classifySample ("still texting me [140bpm f sharp major]", {});
+    CHECK (spelled.keyPc == 6 && ! spelled.minor && spelled.bpm == 140);
+}
+
 int main()
 {
+    sampleCategoryTests();
     sliceSetTests();
     transientTests();
     rtSharedTests();
