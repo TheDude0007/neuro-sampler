@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.12.0 (2026-11-19): Theory brain
+- **Next** (CHORD tab): the four chords most likely to follow the last chord you played, each with its probability (e.g. after V: I). Click one to hear it on the chord pads.
+  - The table is learned from real progressions: 110 from free-midi-chords (MIT), plus your own MASTER CHORD LIBRARY (7,600+ progressions, read from `~/Music/MP-Key/ChordLibrary.tsv` on your Mac, never shipped).
+  - A functional-harmony prior fills in transitions the data never shows.
+- **Progressions:**
+  - pick a mood (Dark, Sad, Nostalgic, Triumphant… 18 moods) or **smart**, plus 4 or 8 chords, then press **Generate**;
+  - **-> SEQ** writes the progression into the selected sequencer pattern on chord pads, one chord per bar (8 chords: two per bar);
+  - **My library only** picks from your own library.
+- **Chord MIDI out:** the chords you play also go out as MIDI notes on a chosen channel (plugin MIDI out and the Neuro Sampler Suite port), so GW-1 or any synth plays along. Note-offs follow the pads.
+- **Parameters:** 1 new (`chordMidiOut`).
+
+
 ## 1.11.0 (2026-11-19): Jog chop, keys from file names
 - **Jog chop** (CHOP tab):
   - **START** and **END** knobs move the selected slice's start and end very finely. The step is 1 sample, 0.1 ms, 1 ms, 10 ms, or follows the zoom.

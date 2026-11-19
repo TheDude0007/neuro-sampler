@@ -116,6 +116,9 @@ public:
 
     // Any thread: the last chord played (DiatonicChord degree/root/shape packed by packChord), or -1.
     int getLastChord() const noexcept { return lastChord.load (std::memory_order_relaxed); }
+    // Audio thread: the notes of the chord started by the last noteOn (MIDI chord out), cleared by the caller.
+    struct ChordNotes { int count = 0; std::array<int, DiatonicChord::maxTones> notes {}; };
+    ChordNotes lastChordNotes;
     static int packChord (const DiatonicChord& c, ChordShape shape) noexcept { return c.rootPc() | (c.degree << 4) | ((int) shape << 8); }
     void noteOff (int note) noexcept;
     void killAll() noexcept;

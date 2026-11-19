@@ -86,6 +86,7 @@ NeuroMPCProcessor::NeuroMPCProcessor()
     chordVoicingParam = apvts.getRawParameterValue (ParamIDs::chordVoicing);
     chordRenderParam  = apvts.getRawParameterValue (ParamIDs::chordRender);
     chordStrumParam   = apvts.getRawParameterValue (ParamIDs::chordStrum);
+    chordMidiOutParam = apvts.getRawParameterValue (ParamIDs::chordMidiOut);
     for (int i = 0; i < 4; ++i)
         chordVoiceParams[(size_t) i] = apvts.getRawParameterValue (ParamIDs::chordVoice[i]);
     chordSplitParam = apvts.getRawParameterValue (ParamIDs::chordSplit);
@@ -287,7 +288,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
                 std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chordRender, 1 }, "Chord Pitch Mode",
                                                         StringArray { "Keep length", "Resample" }, 0),
                 std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::chordStrum, 1 }, "Chord Strum",
-                                                       NormalisableRange<float> (0.0f, 120.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("ms")));
+                                                       NormalisableRange<float> (0.0f, 120.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("ms")),
+                // v1.12: the chords played also go out as MIDI (plugin MIDI out + the "Neuro Sampler Suite" port), e.g. to GW-1.
+                std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chordMidiOut, 1 }, "Chord MIDI Out",
+                                                        [] { StringArray a { "Off" }; for (int c = 1; c <= 16; ++c) a.add ("Ch " + String (c)); return a; }(), 0));
 
     // Timbre chords: each chord tone from a different slice (0 = the played slice).
     static constexpr const char* voiceNames[] { "Chord Root Slice", "Chord 3rd Slice", "Chord 5th Slice", "Chord 7th/9th Slice" };
@@ -755,16 +759,44 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     repeatParams.oneShot = false;
     repeatParams.releaseMs = juce::jmin (vp.releaseMs, 5.0f);
 
+    const auto chordChannel = (int) chordMidiOutParam->load(); // 0 off, else 1..16
+    int eventOffset = 0;
+    auto sendChordMidi = [&] (int trigger, float velocity)
+    {
+        auto& sent = chordOutNotes[(size_t) juce::jlimit (0, 127, trigger)];
+
+        for (int k = 0; k < sent[0] && numLinkEvents < (int) linkEvents.size(); ++k) // release what this trigger sent before
+            linkEvents[(size_t) numLinkEvents++] = { eventOffset, { (uint8_t) (0x80 | (chordChannel - 1)), (uint8_t) sent[(size_t) k + 1], 0 }, 3 };
+        sent[0] = 0;
+
+        if (velocity > 0.0f)
+            for (int k = 0; k < engine.lastChordNotes.count && k < 5 && numLinkEvents < (int) linkEvents.size(); ++k)
+            {
+                const auto n = engine.lastChordNotes.notes[(size_t) k];
+                linkEvents[(size_t) numLinkEvents++] = { eventOffset, { (uint8_t) (0x90 | (chordChannel - 1)), (uint8_t) n,
+                                                                        (uint8_t) juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)) }, 3 };
+                sent[(size_t) ++sent[0]] = (int8_t) n;
+            }
+    };
+
     auto handle = [&] (int note, float velocity, int slice, float pitch, bool repeat)
     {
         const auto& p = repeat ? repeatParams : vp;
 
         if (velocity <= 0.0f)
+        {
             engine.noteOff (note);
+            if (chordChannel > 0) sendChordMidi (note, 0.0f);
+        }
         else if (s != nullptr && sl != nullptr && slice >= 0)
             engine.playSlice (slice, note, velocity, pitch, 0, *s, *sl, bank, p);
         else if (s != nullptr && sl != nullptr)
+        {
+            engine.lastChordNotes.count = 0;
             engine.noteOn (note, velocity, *s, *sl, bank, padMap, p, pitch);
+            if (chordChannel > 0 && engine.lastChordNotes.count > 0)
+                sendChordMidi (note, velocity);
+        }
     };
 
     int pos = 0;
@@ -774,6 +806,7 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         const auto& e = events[i];
         renderWithModulation (outs, pos, e.offset);
         pos = e.offset;
+        eventOffset = e.offset;
 
         if (e.type == Event::control)
         {
@@ -2448,6 +2481,96 @@ int NeuroMPCProcessor::getKeyShift() const noexcept
 {
     const auto play = (int) playKeyParam->load();
     return play > 0 ? neuro::keyShiftBetween ((int) scaleRootParam->load(), play - 1) : 0;
+}
+
+neuro::ProgressionBrain& NeuroMPCProcessor::theoryBrain()
+{
+    static neuro::ProgressionBrain brain = []
+    {
+        neuro::ProgressionBrain b;
+        const auto tsv = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("MP-Key/ChordLibrary.tsv");
+        if (tsv.existsAsFile())
+            librarySize() = neuro::loadChordLibraryTsv (b, tsv.loadFileAsString().toStdString());
+        return b;
+    }();
+    return brain;
+}
+
+int& NeuroMPCProcessor::librarySize()
+{
+    static int n = 0;
+    return n;
+}
+
+int NeuroMPCProcessor::chordLibrarySize()
+{
+    theoryBrain();
+    return librarySize();
+}
+
+bool NeuroMPCProcessor::isSongKeyMinor() const noexcept
+{
+    const auto mask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1, (int) scaleParam->load())].mask;
+    return ((mask >> 3) & 1u) != 0 && ((mask >> 4) & 1u) == 0;
+}
+
+int NeuroMPCProcessor::getLastChordDegree() const noexcept
+{
+    const auto last = engine.getLastChord();
+    return last >= 0 ? ((last >> 4) & 0xF) : -1;
+}
+
+std::vector<std::pair<int, float>> NeuroMPCProcessor::suggestNextChords (int n) const
+{
+    return theoryBrain().suggest (isSongKeyMinor(), juce::jmax (0, getLastChordDegree()), n);
+}
+
+neuro::Progression NeuroMPCProcessor::generateProgression (const std::string& mood, int length, uint32_t seed, bool libraryOnly) const
+{
+    return theoryBrain().generate (isSongKeyMinor(), mood, length, seed, libraryOnly);
+}
+
+void NeuroMPCProcessor::progressionToSequencer (const neuro::Progression& prog, int pattern)
+{
+    if (prog.degrees.empty())
+        return;
+
+    const auto perChord = prog.degrees.size() > 4 ? 8 : 16; // 1/16 steps: 4 chords = 4 bars, 8 chords = 2 per bar
+    editSeqPattern (pattern, [&] (neuro::SeqPattern& p)
+    {
+        p = neuro::SeqPattern {};
+        p.name = "Chords: " + prog.numerals.substr (0, 40);
+        const auto total = juce::jmin (neuro::SeqLane::maxSteps, perChord * (int) prog.degrees.size());
+
+        for (int lane = 0; lane < 8; ++lane)
+            p.lanes[(size_t) lane].length = total;
+
+        for (size_t k = 0; k < prog.degrees.size() && (int) k * perChord < total; ++k)
+        {
+            auto& step = p.lanes[(size_t) juce::jlimit (0, 6, prog.degrees[k])].steps[k * (size_t) perChord];
+            step.on = true;
+            step.velocity = 0.85f;
+            step.gate = 1.0f;
+        }
+    }, Undo::always);
+
+    for (auto [id, value] : { std::pair { ParamIDs::chords, 2.0f }, { ParamIDs::keyMode, 0.0f } })
+    {
+        auto* param = apvts.getParameter (id);
+        param->setValueNotifyingHost (param->convertTo0to1 (value));
+    }
+}
+
+void NeuroMPCProcessor::auditionChordDegree (int degree, bool on)
+{
+    if (on && (int) chordsParam->load() != 2)
+    {
+        auto* param = apvts.getParameter (ParamIDs::chords);
+        param->setValueNotifyingHost (param->convertTo0to1 (2.0f));
+    }
+
+    const auto bank = juce::jlimit (0, neuro::numBanks - 1, (int) apvts.getRawParameterValue (ParamIDs::padBank)->load());
+    auditionNote (padNote (bank * neuro::padsPerBank + juce::jlimit (0, 7, degree)), on ? 0.85f : 0.0f);
 }
 
 int NeuroMPCProcessor::variantSignature() const

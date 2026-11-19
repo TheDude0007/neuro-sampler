@@ -289,6 +289,55 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     };
     for (auto* l : { &chordNow, &chordPadNames, &chordSound })
         l->setFont (juce::FontOptions (12.0f));
+
+    // Theory brain: what comes next (from the last chord played), and whole progressions by mood.
+    nextLabel.setText ("Next:", juce::dontSendNotification);
+    nextLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& b = nextChordButtons[(size_t) i];
+        b.setTooltip ("The chords most likely to come next after the last one you played (learned from real progressions). Click to hear it");
+        b.onClick = [this, i]
+        {
+            if (const auto d = nextChordDegrees[(size_t) i]; d >= 0)
+            {
+                proc.auditionChordDegree (d, true);  // one-shot chord (the note-off matters only in Gate mode)
+                proc.auditionChordDegree (d, false);
+            }
+        };
+    }
+    moodBox.addItem ("Mood: smart", 1);
+    {
+        int id = 2;
+        for (const auto& m : neuro::ProgressionBrain::moods())
+            moodBox.addItem ("Mood: " + juce::String (m), id++);
+    }
+    moodBox.setSelectedId (1, juce::dontSendNotification);
+    moodBox.setTooltip ("Smart: a progression walked from the learned 'what comes next' table. A mood: a real progression tagged with it");
+    progLengthBox.addItemList ({ "4 chords", "8 chords" }, 1);
+    progLengthBox.setSelectedId (1, juce::dontSendNotification);
+    progLibraryOnly.setTooltip ("Pick from your own MASTER CHORD LIBRARY only (found at ~/Music/MP-Key/ChordLibrary.tsv)");
+    generateButton.setTooltip ("Make a progression in the song key (press again for another)");
+    generateButton.onClick = [this]
+    {
+        const auto mood = moodBox.getSelectedId() > 1 ? moodBox.getText().fromFirstOccurrenceOf ("Mood: ", false, false).toStdString() : std::string();
+        currentProgression = proc.generateProgression (mood, progLengthBox.getSelectedId() == 2 ? 8 : 4, progressionSeed++, progLibraryOnly.getToggleState());
+        showProgression();
+    };
+    progToSeqButton.setTooltip ("Write the progression into the selected SEQ pattern on chord pads (one chord per bar); press play in SEQ");
+    progToSeqButton.onClick = [this]
+    {
+        if (currentProgression.degrees.empty()) generateButton.triggerClick();
+        proc.progressionToSequencer (currentProgression, proc.getSelectedSeqPattern());
+        progressionLabel.setText (progressionLabel.getText() + "   -> SEQ pattern " + juce::String (proc.getSelectedSeqPattern() + 1),
+                                  juce::dontSendNotification);
+    };
+    chordMidiOutBox.addItem ("Chord MIDI out: off", 1);
+    for (int c = 1; c <= 16; ++c) chordMidiOutBox.addItem ("Chord MIDI out: ch " + juce::String (c), c + 1);
+    attachCombo (chordMidiOutBox, ParamIDs::chordMidiOut);
+    chordMidiOutBox.setTooltip ("Send the chords you play as MIDI notes (plugin MIDI out and the Neuro Sampler Suite port), e.g. to GW-1");
+    progressionLabel.setFont (juce::FontOptions (12.0f));
+    nextLabel.setJustificationType (juce::Justification::centredRight);
     chordPadNames.setJustificationType (juce::Justification::topLeft);
     chordNow.setFont (juce::FontOptions (16.0f, juce::Font::bold));
     for (auto* c : chordPanelComponents())
@@ -1423,7 +1472,10 @@ void NeuroMPCEditor::registerMappables()
              { &chopButton, "chop.go" }, { &chopSnap, "chop.snap" }, { &slicesToPads, "chop.slicesToPads" }, { &chopKitToPads, "chop.kitToPads" },
              { &levelsMode, "chop.levels" }, { &jogLeft, "chop.jogStart" }, { &jogRight, "chop.jogEnd" }, { &jogStep, "chop.jogStep" },
              { &jogZero, "chop.jogZeroCross" }, { &jogMpk, "chop.jogOnMpk" }, { &splitStemsButton, "kit.splitStems" }, { &chordTab, "view.chord" },
-             { &chordUseSlice, "chord.useSlice" } })
+             { &chordUseSlice, "chord.useSlice" }, { &generateButton, "chord.generate" }, { &progToSeqButton, "chord.toSeq" },
+             { &moodBox, "chord.mood" }, { &progLengthBox, "chord.progLength" }, { &progLibraryOnly, "chord.libraryOnly" },
+             { &nextChordButtons[0], "chord.next1" }, { &nextChordButtons[1], "chord.next2" }, { &nextChordButtons[2], "chord.next3" },
+             { &nextChordButtons[3], "chord.next4" } })
         id (*c, name);
 
     for (int pc = 0; pc < 12; ++pc)
@@ -1903,7 +1955,25 @@ std::vector<juce::Component*> NeuroMPCEditor::kitPanelComponents()
 std::vector<juce::Component*> NeuroMPCEditor::chordPanelComponents()
 {
     return { &chordTitle, &chordsMode, &chordShapeBox, &chordVoicingBox, &chordRenderBox, &chordStrum, &chordUseSlice, &chordNow,
-             &chordPadNames, &chordSound, &chordVoiceBoxes[0], &chordVoiceBoxes[1], &chordVoiceBoxes[2], &chordVoiceBoxes[3] };
+             &chordPadNames, &chordSound, &chordVoiceBoxes[0], &chordVoiceBoxes[1], &chordVoiceBoxes[2], &chordVoiceBoxes[3],
+             &nextLabel, &nextChordButtons[0], &nextChordButtons[1], &nextChordButtons[2], &nextChordButtons[3], &moodBox, &progLengthBox,
+             &progLibraryOnly, &generateButton, &progToSeqButton, &progressionLabel, &chordMidiOutBox };
+}
+
+void NeuroMPCEditor::showProgression()
+{
+    const auto& p = currentProgression;
+    const auto minor = p.minor;
+    const auto mask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1,
+                                                          (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load())].mask;
+    juce::String numerals, names;
+    for (auto d : p.degrees)
+    {
+        numerals << neuro::ProgressionBrain::numeral (minor, d) << " ";
+        names << juce::String (neuro::diatonicChord (d, mask, proc.getEffectiveKeyRoot(), neuro::ChordShape::triad).name()) << " ";
+    }
+    progressionLabel.setText (numerals.trim() + "   (" + names.trim() + ")   " + juce::String (p.moods) + " - " + juce::String (p.source),
+                              juce::dontSendNotification);
 }
 
 void NeuroMPCEditor::updateChordPanel()
@@ -1950,6 +2020,23 @@ void NeuroMPCEditor::updateChordPanel()
     const auto k = proc.getKeyboardSlice();
     chordSound.setText ("Chord sound: " + (k < slices.size() ? "slice " + juce::String (k + 1) : juce::String ("none")),
                         juce::dontSendNotification);
+
+    // What comes next, from the last chord played (or the tonic).
+    {
+        const auto mask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1,
+                                                              (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load())].mask;
+        const auto next = proc.suggestNextChords (4);
+        const auto minor = proc.isSongKeyMinor();
+        for (size_t i = 0; i < nextChordButtons.size(); ++i)
+        {
+            nextChordDegrees[i] = i < next.size() ? next[i].first : -1;
+            nextChordButtons[i].setButtonText (i < next.size()
+                ? juce::String (neuro::diatonicChord (next[i].first, mask, proc.getEffectiveKeyRoot(), neuro::ChordShape::triad).name()) + " "
+                      + neuro::ProgressionBrain::numeral (minor, next[i].first) + "  " + juce::String (juce::roundToInt (next[i].second * 100.0f)) + "%"
+                : juce::String ("-"));
+        }
+        progLibraryOnly.setEnabled (NeuroMPCProcessor::chordLibrarySize() > 0);
+    }
 
     // Timbre-chord slot boxes: grey out slices that don't exist.
     if (slices.size() != shownChordSlices)
@@ -3258,13 +3345,32 @@ void NeuroMPCEditor::resized()
             b.setBounds (r2.removeFromLeft (124));
             r2.removeFromLeft (6);
         }
-        chordPadNames.setBounds (row (54));
+        chordPadNames.setBounds (row (40));
+        auto r3 = row();
+        nextLabel.setBounds (r3.removeFromLeft (54));
+        r3.removeFromLeft (6);
+        for (auto& b : nextChordButtons)
+        {
+            b.setBounds (r3.removeFromLeft (118));
+            r3.removeFromLeft (4);
+        }
+        auto r4 = row();
+        r4.removeFromLeft (60);
+        for (auto [c, w] : std::initializer_list<std::pair<juce::Component*, int>> { { &moodBox, 160 }, { &progLengthBox, 96 },
+                                                                                     { &progLibraryOnly, 120 }, { &generateButton, 80 }, { &progToSeqButton, 64 } })
+        {
+            c->setBounds (r4.removeFromLeft (w));
+            r4.removeFromLeft (6);
+        }
+        progressionLabel.setBounds (row (20).withTrimmedLeft (60));
 
         chordNow.setBounds (right.removeFromTop (30));
         right.removeFromTop (6);
         chordSound.setBounds (right.removeFromTop (20));
         right.removeFromTop (6);
         chordUseSlice.setBounds (right.removeFromTop (24).withWidth (160));
+        right.removeFromTop (6);
+        chordMidiOutBox.setBounds (right.removeFromTop (24).withWidth (200));
     }
 
     // Kit panel: timbre map on the left, controls on the right; also uses the info area.

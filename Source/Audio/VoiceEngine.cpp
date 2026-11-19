@@ -154,6 +154,9 @@ bool VoiceEngine::playChord (int sourceIndex, int noteTag, float level, float pi
             }
 
     const auto voiceLevel = level / std::sqrt ((float) n);
+    lastChordNotes.count = n;
+    for (int k = 0; k < n; ++k)
+        lastChordNotes.notes[(size_t) k] = juce::jlimit (0, 127, voicesOut[(size_t) order[(size_t) k]].target);
 
     for (int k = 0; k < n; ++k)
     {

@@ -59,6 +59,19 @@ The CHORD tab shows the chord just played (for example "Am  vi") and the chord c
 - **Missing timbre slot:** falls back to the played slice.
 - **Drums:** a slice classed as a drum is not harmonized.
 
+## Theory brain (v1.12, `Source/Core/Progressions.h`)
+- **Learning:** transitions are counted from real progressions, in scale degrees per mode.
+  - **Built in:** 110 progressions from free-midi-chords (MIT, `Source/Core/ProgressionData.h`).
+  - **Your library:** the MASTER CHORD LIBRARY index (`~/Music/MP-Key/ChordLibrary.tsv`), read on your Mac only. Progressions with borrowed chords are skipped.
+  - **Prior:** a functional-harmony prior (V→I, ii→V, IV→V/I, vi→IV, VII→i, …) weighted at two counts.
+- **Next:** P(next | last chord played) with the same chord excluded, top four. Before anything has been played, it suggests from the tonic.
+- **Generate:**
+  - **Smart:** a walk on the table from the tonic, with the last chord chosen as a likely way home (a cadence).
+  - **Mood:** a random real progression tagged with that mood, in the song key's mode. Extended to 8 chords by repeating and ending on a cadence. The same seed gives the same result.
+- **-> SEQ:**
+  - writes lanes 1–7 (pads 1–7 = degrees I–VII) at 1/16: one chord per bar for 4 chords, two per bar for 8, 64 steps;
+  - sets Chords to chord pads and Pads mode; one undo step.
+- **Chord MIDI out:** each chord's notes (as voiced) go out as note-ons on the chosen channel, and the trigger's note-off releases them.
+
 ## Not yet (roadmap)
-- **v1.12:** a theory brain that suggests "what comes next" chords, plus MIDI chord in/out.
 - **v1.13:** a melodic engine (a progression-aware arp, Tonnetz walks, Euclidean and harmonic-series patterns).

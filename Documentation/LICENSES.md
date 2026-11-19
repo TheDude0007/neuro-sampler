@@ -12,3 +12,6 @@
 | Demucs model `htdemucs` 4-source (ggml f16, for Split stems) | HF `Retrobear/demucs.cpp` @ 8f58ac0 | MIT (Meta, Demucs) | **not distributed**: downloaded by the user on first use, SHA-256 verified |
 
 Neuro Sampler Suite itself is AGPL-3.0, because it is built against JUCE's open-source licence. MIT dependencies are compatible with AGPL. Their license files are kept in their directories.
+
+## free-midi-chords (MIT)
+`Source/Core/ProgressionData.h` lists the chord progressions (as scale degrees with their mood tags) from free-midi-chords, Copyright (c) 2019 Ludovic Drolez, MIT License: https://github.com/ldrolez/free-midi-chords

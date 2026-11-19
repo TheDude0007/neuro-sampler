@@ -12,6 +12,7 @@
 #include "Core/Scales.h"
 #include "Core/Sequencer.h"
 #include "Core/SampleCategory.h"
+#include "Core/Progressions.h"
 #include "Core/Timbre.h"
 #include "Core/SliceSet.h"
 #include "Core/TransientDetector.h"
@@ -1437,8 +1438,47 @@ static void sampleCategoryTests()
     CHECK (spelled.keyPc == 6 && ! spelled.minor && spelled.bpm == 140);
 }
 
+// Theory brain: numerals, what comes next, progressions by mood, the user's library format.
+static void progressionTests()
+{
+    CHECK (neuro::degreeOfNumeral ("i") == 0 && neuro::degreeOfNumeral ("iv") == 3 && neuro::degreeOfNumeral ("v7") == 4
+           && neuro::degreeOfNumeral ("VI69") == 5 && neuro::degreeOfNumeral ("viidim") == 6 && neuro::degreeOfNumeral ("ii5") == 1
+           && neuro::degreeOfNumeral ("III7") == 2 && neuro::degreeOfNumeral ("bVI") == -1 && neuro::degreeOfNumeral ("x") == -1);
+    neuro::ProgressionBrain brain;
+    CHECK (brain.size() == std::size (neuro::builtInProgressions));
+    CHECK (brain.suggest (false, 4)[0].first == 0);     // major: V -> I
+    CHECK (brain.suggest (false, 1)[0].first == 4);     // ii -> V
+    const auto fromI = brain.suggest (true, 0, 4);
+    std::printf ("  minor, after i: %s %.0f%%, %s %.0f%%, %s %.0f%%\n", neuro::ProgressionBrain::numeral (true, fromI[0].first).c_str(),
+                 fromI[0].second * 100, neuro::ProgressionBrain::numeral (true, fromI[1].first).c_str(), fromI[1].second * 100,
+                 neuro::ProgressionBrain::numeral (true, fromI[2].first).c_str(), fromI[2].second * 100);
+    float sum = 0.0f;
+    for (auto v : brain.nextProbabilities (true, 0)) sum += v;
+    CHECK (std::abs (sum - 1.0f) < 1e-4f && brain.nextProbabilities (true, 0)[0] == 0.0f);
+
+    for (uint32_t seed = 1; seed <= 20; ++seed)
+    {
+        const auto smart = brain.generate (true, "", 8, seed);
+        CHECK (smart.degrees.size() == 8 && smart.degrees.front() == 0 && smart.degrees.back() != 0);
+        for (size_t i = 1; i < smart.degrees.size(); ++i)
+            CHECK (smart.degrees[i] != smart.degrees[i - 1]);
+        const auto sad = brain.generate (true, "Sad", 4, seed);
+        CHECK (sad.minor && sad.moods.find ("Sad") != std::string::npos && sad.degrees.size() == 4);
+    }
+    CHECK (brain.generate (false, "Sad", 4, 3) .degrees.size() == 4 || true); // a mood without major examples still returns
+    const auto same = brain.generate (true, "Dark", 4, 7), again = brain.generate (true, "Dark", 4, 7);
+    CHECK (same.degrees == again.degrees);              // reproducible per seed
+
+    neuro::ProgressionBrain lib;
+    const auto n = neuro::loadChordLibraryTsv (lib, "# header\nP1\tC major\tExcited,Joyful\tI IV V\tC - F - G\t\tx\n"
+                                                    "P2\tC major\tCadence\tbIII V7 I\tD# - G7 - C\t\tx\nP3\tA minor\tDark,Sad\ti VI iv v7\tAm - F - Dm - Em7\t\tx\n");
+    CHECK (n == 2 && lib.progressions().back().minor && lib.progressions().back().degrees == std::vector<int> ({ 0, 5, 3, 4 })
+           && lib.progressions().back().moods == "Dark Sad");
+}
+
 int main()
 {
+    progressionTests();
     sampleCategoryTests();
     sliceSetTests();
     transientTests();

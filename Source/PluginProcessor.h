@@ -10,6 +10,7 @@
 #include "Core/NoteRepeat.h"
 #include "Core/Arpeggiator.h"
 #include "Core/MidiMap.h"
+#include "Core/Progressions.h"
 #include "Core/RtShared.h"
 #include "Core/PatternTools.h"
 #include "Core/Sequencer.h"
@@ -90,6 +91,7 @@ namespace ParamIDs
     inline constexpr auto chordVoicing = "chordVoicing";
     inline constexpr auto chordRender  = "chordRender";
     inline constexpr auto chordStrum   = "chordStrum";
+    inline constexpr auto chordMidiOut = "chordMidiOut";
     inline constexpr const char* chordVoice[] { "chordVoiceRoot", "chordVoice3rd", "chordVoice5th", "chordVoice7th" };
     // Per drum-class level, in DrumClass order.
     inline constexpr const char* classLevel[] { "levelKick", "levelSnare", "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2",
@@ -291,6 +293,19 @@ public:
     int getKeyShift() const noexcept;                           // Play In shift, -6 .. +5 semitones
     // Chords (v1.9): the chord pad n (0..15 of a bank) plays in the current key and shape; the last chord played (or -1).
     neuro::DiatonicChord getPadChord (int padInBank) const noexcept;
+    // Theory brain (v1.12). Shared by every instance; learns from the built-in progressions and, when present, the
+    // user's chord library index (~/Music/MP-Key/ChordLibrary.tsv). Message thread.
+    static neuro::ProgressionBrain& theoryBrain();
+    static int chordLibrarySize();                                  // progressions read from the user's library (0 = none)
+    static int& librarySize();
+    bool isSongKeyMinor() const noexcept;                           // the song key's scale has a minor third
+    int getLastChordDegree() const noexcept;                        // degree of the last chord played, or -1
+    std::vector<std::pair<int, float>> suggestNextChords (int n = 4) const;
+    neuro::Progression generateProgression (const std::string& mood, int length, uint32_t seed, bool libraryOnly) const;
+    // Writes a progression into a sequencer pattern (one chord per bar for 4, two per bar for 8; lanes 1-7 = pads 1-7 =
+    // degrees I..VII), switches Chords to chord pads and Pads mode. One undo step.
+    void progressionToSequencer (const neuro::Progression&, int pattern);
+    void auditionChordDegree (int degree, bool on);                 // plays chord pad `degree` (Chords set to chord pads)
     int getLastChord() const noexcept { return engine.getLastChord(); }
 
     // Keyboard mode plays one slice chromatically from its root (manual Root, else detected pitch, else C4).
@@ -407,6 +422,8 @@ private:
     std::atomic<float> *chordsParam = nullptr, *chordShapeParam = nullptr, *chordVoicingParam = nullptr, *chordRenderParam = nullptr,
                        *chordStrumParam = nullptr;
     std::array<std::atomic<float>*, 4> chordVoiceParams {};
+    std::atomic<float>* chordMidiOutParam = nullptr;
+    std::array<std::array<int8_t, 6>, 128> chordOutNotes {}; // audio thread: per trigger note, the chord notes sent (count first)
     std::atomic<float> *clockInParam = nullptr, *clockOutParam = nullptr, *linkPortParam = nullptr, *drumOutputsParam = nullptr;
     std::atomic<float> *noteRepeatParam = nullptr, *repeatRateParam = nullptr, *repeatGateParam = nullptr, *repeatSwingParam = nullptr,
                        *repeatLatchParam = nullptr;

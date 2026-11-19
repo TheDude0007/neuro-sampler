@@ -277,6 +277,17 @@ private:
     juce::Slider chordStrum { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::TextButton chordUseSlice { "Sound: selected slice" };
     int shownChordSlices = -1;
+    // Theory brain (v1.12): next-chord suggestions and progressions
+    std::array<juce::TextButton, 4> nextChordButtons;
+    std::array<int, 4> nextChordDegrees { -1, -1, -1, -1 };
+    juce::Label nextLabel, progressionLabel;
+    juce::ComboBox moodBox, progLengthBox, chordMidiOutBox;
+    juce::ToggleButton progLibraryOnly { "My library only" };
+    juce::TextButton generateButton { "Generate" }, progToSeqButton { "-> SEQ" };
+    neuro::Progression currentProgression;
+    uint32_t progressionSeed = 1;
+    int auditionDegree = -1;
+    void showProgression();
 
     int shownAiState = -1;
     void updateAiStatus();

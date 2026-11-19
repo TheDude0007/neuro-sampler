@@ -870,7 +870,7 @@ int main()
             "weaveFill", "weaveFillEvery", "weavePitch", "padBank", "padBankFollow", "padChannel", "levelKick", "levelSnare",
             "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2", "levelFloorTom", "levelCrash", "levelRide", "levelPerc", "levelTonal", "chordLock", "chordInput", "chordSplit", "midiClockIn", "midiClockOut", "midiLinkPort", "drumOutputs", "noteRepeat", "repeatRate", "repeatGate", "repeatSwing", "repeatLatch",
             "songKeyLock", "playKey", "keyShiftMode", "keyShiftScope", "chords", "chordShape", "chordVoicing", "chordRender", "chordStrum",
-            "chordVoiceRoot", "chordVoice3rd", "chordVoice5th", "chordVoice7th" };
+            "chordVoiceRoot", "chordVoice3rd", "chordVoice5th", "chordVoice7th", "chordMidiOut" };
         NeuroMPCProcessor a;
         juce::StringArray ids;
         for (auto* param : a.getParameters())
@@ -1784,6 +1784,48 @@ int main()
         CHECK (std::abs (midiOf (x, 4800, 9600) - 57.0) < 0.05);
         setParam (ch, ParamIDs::chords, 0.0f);
         toneFile.deleteFile();
+    }
+
+    // ---- v1.12 Theory brain: chord MIDI out follows the chord pads; a progression becomes a SEQ pattern ----
+    {
+        auto tone = writeToneWav (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("neuro_midiout.wav"), 220.0, 1.0);
+        NeuroMPCProcessor tb;
+        tb.prepareToPlay (rate, block);
+        CHECK (tb.loadSample (tone, error) && tb.waitForBackgroundWork (20000));
+        setParam (tb, ParamIDs::scaleRoot, 0.0f);
+        setParam (tb, ParamIDs::scale, (float) neuro::scaleMajor);
+        setParam (tb, ParamIDs::chords, 2.0f);
+        setParam (tb, ParamIDs::chordMidiOut, 2.0f);              // channel 2
+        auto run = [&] (int note, float velocity)
+        {
+            juce::AudioBuffer<float> buf (2, block);
+            juce::MidiBuffer midi;
+            midi.addEvent (velocity > 0.0f ? juce::MidiMessage::noteOn (1, note, velocity) : juce::MidiMessage::noteOff (1, note), 10);
+            tb.processBlock (buf, midi);
+            std::vector<juce::MidiMessage> out;
+            for (const auto m : midi) if (m.getMessage().isNoteOnOrOff()) out.push_back (m.getMessage());
+            return out;
+        };
+        auto on = run (40, 0.9f);                                 // pad A5 = V = G: G B D
+        std::vector<int> notes;
+        for (const auto& m : on) if (m.isNoteOn() && m.getChannel() == 2) notes.push_back (m.getNoteNumber() % 12);
+        std::sort (notes.begin(), notes.end());
+        std::printf ("  chord MIDI out (pad A5 in C): %d note-ons, pitch classes %d %d %d\n", (int) notes.size(), notes.size() > 0 ? notes[0] : -1,
+                     notes.size() > 1 ? notes[1] : -1, notes.size() > 2 ? notes[2] : -1);
+        CHECK (notes == std::vector<int> ({ 2, 7, 11 }));
+        auto off = run (40, 0.0f);
+        CHECK (std::count_if (off.begin(), off.end(), [] (const auto& m) { return m.isNoteOff() && m.getChannel() == 2; }) == 3);
+        CHECK (tb.getLastChordDegree() == 4 && tb.suggestNextChords (1)[0].first == 0); // after V comes I
+
+        neuro::Progression prog;
+        prog.degrees = { 0, 5, 3, 4 };
+        prog.numerals = "I vi IV V";
+        setParam (tb, ParamIDs::chords, 0.0f);
+        tb.progressionToSequencer (prog, 2);
+        const auto& pat = tb.getSeqPattern (2);
+        CHECK (pat.lanes[0].steps[0].on && pat.lanes[5].steps[16].on && pat.lanes[3].steps[32].on && pat.lanes[4].steps[48].on);
+        CHECK (pat.lanes[0].length == 64 && ! pat.lanes[0].steps[16].on && (int) tb.apvts.getRawParameterValue (ParamIDs::chords)->load() == 2);
+        tone.deleteFile();
     }
 
     // ---- v1.11 Jog chop: START / END knobs move the selected slice's markers by fine steps; MPK K5/K6 mapping ----
