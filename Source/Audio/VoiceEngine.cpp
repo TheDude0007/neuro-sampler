@@ -14,26 +14,161 @@ void VoiceEngine::noteOn (int note, float velocity, const SampleData& sample, co
 {
     velocity = juce::jlimit (0.0f, 1.0f, velocity);
 
+    // Chords: Harmonize turns any triggered slice into the key's chord on its note (Keys mode: on the key played);
+    // Chord pads lets the pad pick the chord.
+    auto trigger = [&] (int index, float level, float pitch, int choke, int padIndex)
+    {
+        if (params.chordPads == 0 || ! playChord (index, note, level, pitch, choke, padIndex, sample, slices, bank, params))
+            playSlice (index, note, level, pitch, choke, sample, slices, bank, params);
+    };
+
     if (params.keyboardMode)
     {
         const auto offset = (float) (snapToScale (note, params.scaleMask, params.scaleRoot) - (double) params.keyboardRoot);
-        playSlice (params.keyboardSlice, note, velocity, offset + pitchOffset, 0, sample, slices, bank, params);
+        trigger (params.keyboardSlice, velocity, offset + pitchOffset, 0, -1);
     }
     else if (pads == nullptr)
     {
-        playSlice (note - baseNote, note, velocity, pitchOffset, 0, sample, slices, bank, params);
+        trigger (note - baseNote, velocity, pitchOffset, 0, note - baseNote);
     }
     else
     {
-        for (const auto& pad : *pads)
-            if (pad.note == note && pad.sliceId > 0)
-                playSlice (slices.indexOfId (pad.sliceId), note, pad.levelFor (velocity), pad.pitch + pitchOffset, pad.chokeGroup,
+        for (size_t i = 0; i < pads->size(); ++i)
+        {
+            const auto& pad = (*pads)[i];
+
+            if (pad.note != note)
+                continue;
+
+            if (params.chordPads == 2) // the pad is a chord, played with the keyboard slice (empty pads too)
+                playChord (params.keyboardSlice, note, pad.levelFor (velocity), pad.pitch + pitchOffset, pad.chokeGroup, (int) i,
                            sample, slices, bank, params);
+            else if (pad.sliceId > 0)
+                trigger (slices.indexOfId (pad.sliceId), pad.levelFor (velocity), pad.pitch + pitchOffset, pad.chokeGroup, (int) i);
+        }
     }
 }
 
+bool VoiceEngine::playChord (int sourceIndex, int noteTag, float level, float pitchOffset, int chokeGroup, int padIndex,
+                             const SampleData& sample, const SliceSet& slices, const StretchBank* bank, const VoiceParams& params) noexcept
+{
+    if (sourceIndex < 0 || sourceIndex >= slices.size())
+        return false;
+
+    const auto& all = slices.getSlices();
+    const auto& source = all[(size_t) sourceIndex];
+    const auto padChord = params.chordPads == 2 && padIndex >= 0 && ! params.keyboardMode;
+    auto rootOf = [] (const SliceDefinition& s) { return s.rootNote >= 0.0f ? s.rootNote : s.detectedRoot; };
+
+    // The source's pitch: the keyboard slice's root (manual, detected, else C4) for Chord pads and Keys mode; otherwise
+    // a slice that can be harmonised needs a known pitch and must not be a drum.
+    float sourceRoot = params.keyboardRoot;
+
+    if (! padChord && ! params.keyboardMode)
+    {
+        if (! chordLockEligible (source))
+            return false;
+
+        sourceRoot = rootOf (source);
+    }
+
+    const auto keyShift = ! padChord && ! params.keyboardMode && keyShiftEligible (source, params.keyShiftAll) ? params.keyShift : 0;
+    const auto sounding = sourceRoot + source.pitchSemitones + pitchOffset + (float) keyShift;
+
+    DiatonicChord chord;
+    auto shape = params.chordShape;
+    int rootTarget = 0;
+
+    if (padChord)
+    {
+        const auto inBank = padIndex % padsPerBank;
+        shape = inBank >= 8 ? richerShape (shape) : shape;
+        chord = diatonicChord (inBank % 8, params.scaleMask, params.scaleRoot, shape);
+        rootTarget = nearestNoteWithPitchClass (sounding, chord.rootPc()) + (inBank % 8 == 7 ? 12 : 0);
+    }
+    else
+    {
+        chord = diatonicChordOn ((int) std::lround (sounding) % 12, params.scaleMask, params.scaleRoot, shape);
+        rootTarget = nearestNoteWithPitchClass (sounding, chord.rootPc());
+    }
+
+    // One voice per chord tone: its slice (timbre chords: a slice per voice slot) and target note. Close voicing puts
+    // each tone nearest its slice's own pitch, so every voice moves as little as possible (best audio quality).
+    struct ChordVoice { int slice; float base, offset; int target; int role; };
+    std::array<ChordVoice, DiatonicChord::maxTones> voicesOut {};
+    const auto n = chord.numTones;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const auto role = chord.roles[(size_t) i];
+        auto& v = voicesOut[(size_t) i];
+        v.role = role;
+        v.slice = sourceIndex;
+        v.base = sounding - (float) keyShift; // the pitch before any shift (pitchOffset included)
+        v.offset = pitchOffset;
+
+        if (const auto id = params.voiceSliceIds[(size_t) role]; id > 0)
+            if (const auto other = slices.indexOfId (id); other >= 0 && other != sourceIndex)
+            {
+                const auto r = rootOf (all[(size_t) other]);
+                v.slice = other;
+                v.offset = 0.0f;
+                v.base = r >= 0.0f ? r + all[(size_t) other].pitchSemitones : -1.0f; // unpitched: plays as itself
+            }
+
+        if (i == 0)
+            v.target = rootTarget;
+        else if (chord.octave[(size_t) i] != 0 && chord.pcs[(size_t) i] == chord.rootPc())
+            v.target = rootTarget + 12; // power chord octave
+        else
+            v.target = nearestNoteWithPitchClass (v.slice == sourceIndex ? (float) rootTarget : v.base, chord.pcs[(size_t) i]);
+
+        for (int j = 0; j < i; ++j) // no two voices on one note
+            if (voicesOut[(size_t) j].target == v.target)
+                v.target += 12;
+
+        if ((role == 1 || role == 3) && v.target < 52) // thirds and sevenths below E3 turn to mud: up an octave
+            v.target += 12;
+    }
+
+    // Voicing.
+    std::array<int, DiatonicChord::maxTones> order {};
+    for (int i = 0; i < n; ++i) order[(size_t) i] = i;
+    auto byPitch = [&] { std::sort (order.begin(), order.begin() + n, [&] (int a, int b) { return voicesOut[(size_t) a].target < voicesOut[(size_t) b].target; }); };
+    byPitch();
+
+    if (params.chordVoicing == ChordVoicing::drop2 && n >= 3)
+        voicesOut[(size_t) order[(size_t) n - 2]].target -= 12;
+    else if (params.chordVoicing == ChordVoicing::wide && voicesOut[0].target - 12 >= 24)
+        voicesOut[0].target -= 12;
+
+    byPitch();
+
+    // Choke once for the whole chord, then start the voices upwards (strum), at an equal-loudness level.
+    if (chokeGroup > 0)
+        for (auto& other : voices)
+            if (other.active && other.chokeGroup == chokeGroup)
+            {
+                other.releasing = true;
+                other.releaseStep = std::max (other.releaseStep, 1.0f / (chokeMs * 0.001f * (float) hostRate));
+            }
+
+    const auto voiceLevel = level / std::sqrt ((float) n);
+
+    for (int k = 0; k < n; ++k)
+    {
+        const auto& v = voicesOut[(size_t) order[(size_t) k]];
+        const auto shift = v.base >= 0.0f ? (float) v.target - v.base : 0.0f; // the key change is already in the target
+        playSlice (v.slice, noteTag, voiceLevel, v.offset, chokeGroup, sample, slices, bank, params, shift, true, k * params.strumSamples);
+    }
+
+    lastChord.store (packChord (chord, shape), std::memory_order_relaxed);
+    return true;
+}
+
 void VoiceEngine::playSlice (int index, int noteTag, float level, float pitchOffset, int chokeGroup, const SampleData& sample,
-                             const SliceSet& slices, const StretchBank* bank, const VoiceParams& params) noexcept
+                             const SliceSet& slices, const StretchBank* bank, const VoiceParams& params, float voiceShift,
+                             bool chordVoice, int delaySamples) noexcept
 {
     if (index < 0 || index >= slices.size())
         return;
@@ -50,16 +185,17 @@ void VoiceEngine::playSlice (int index, int noteTag, float level, float pitchOff
     const auto displayOffset = start;
     auto displayScale = 1.0;
     auto pitch = (double) slice.pitchSemitones + pitchOffset; // slice pitch is resampled unless a keep-length render is used
-    const auto keyShift = params.keyShift != 0 && keyShiftEligible (slice, params.keyShiftAll) ? params.keyShift : 0;
-    auto extraShift = (float) keyShift; // key change + Chord-Lock, on top of the slice's own pitch
+    const auto keyShift = ! chordVoice && params.keyShift != 0 && keyShiftEligible (slice, params.keyShiftAll) ? params.keyShift : 0;
+    auto extraShift = (float) keyShift + voiceShift; // key change + Chord-Lock (or a chord voice), on top of the slice's own pitch
 
-    if (params.chordMode != 0 && params.chordMask != 0 && chordLockEligible (slice))
+    if (! chordVoice && params.chordMode != 0 && params.chordMask != 0 && chordLockEligible (slice))
         extraShift += chordLockOffset ((slice.rootNote >= 0.0f ? slice.rootNote : slice.detectedRoot) + (float) pitch + (float) keyShift,
                                        params.chordMask);
 
     // Keep-length key change and Chord-Lock use a variant rendered with the whole-semitone part of their shift.
-    const auto extraRendered = (params.keyShiftKeepLength ? keyShift : 0)
-                               + (params.chordMode == 2 ? (int) std::lround (extraShift - (float) keyShift) : 0);
+    const auto extraRendered = chordVoice ? (params.chordKeepLength ? (int) std::lround (voiceShift) : 0)
+                                          : (params.keyShiftKeepLength ? keyShift : 0)
+                                                + (params.chordMode == 2 ? (int) std::lround (extraShift - (float) keyShift) : 0);
     const auto useRender = slice.needsRender() || extraRendered != 0;
 
     if (bank != nullptr && useRender)
@@ -77,7 +213,7 @@ void VoiceEngine::playSlice (int index, int noteTag, float level, float pitchOff
 
     pitch += extraShift; // the remainder (or all of it, while a render is pending) by resampling
 
-    if (chokeGroup > 0)
+    if (chokeGroup > 0 && ! chordVoice) // a chord chokes once, in playChord
         for (auto& other : voices)
             if (other.active && other.chokeGroup == chokeGroup)
             {
@@ -111,6 +247,7 @@ void VoiceEngine::playSlice (int index, int noteTag, float level, float pitchOff
     v->attackStep = 1.0f / (params.attackMs * 0.001f * (float) hostRate + 1.0f);
     v->releaseStep = 1.0f / (params.releaseMs * 0.001f * (float) hostRate + 1.0f);
     v->env = params.attackMs > 0.0f ? 0.0f : 1.0f;
+    v->delay = std::max (0, delaySamples);
     v->order = ++counter;
 }
 
@@ -155,6 +292,12 @@ void VoiceEngine::render (const OutputBuses& buses, int startSample, int numSamp
         {
             if (i % modInterval == 0)
                 rate = v.baseRate * std::exp2 ((double) modSemitones[i] / 12.0);
+
+            if (v.delay > 0) // strummed: not started yet
+            {
+                --v.delay;
+                continue;
+            }
 
             auto idx = (int64_t) std::floor (v.pos);
 

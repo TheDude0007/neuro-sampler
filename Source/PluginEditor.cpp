@@ -88,7 +88,9 @@ void NeuroMPCEditor::Pad::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r, theme.radius, 2.0f);
     }
 
-    const auto label = keys ? juce::String ("KEY")
+    const auto chordPad = ! keys && (int) processor.apvts.getRawParameterValue (ParamIDs::chords)->load() == 2;
+    const auto label = chordPad ? juce::String (processor.getPadChord (p % neuro::padsPerBank).name())
+                     : keys ? juce::String ("KEY")
                      : ! def.name.empty() ? juce::String (def.name)
                      : sliceIndex >= 0 ? "S" + juce::String (sliceIndex + 1) : juce::String ("empty");
 
@@ -213,7 +215,7 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     for (auto* c : { (juce::Component*) &repeatHold, (juce::Component*) &repeatLock, (juce::Component*) &repeatRate })
         addAndMakeVisible (c);
 
-    for (auto* tab : { &sliceTab, &padTab, &arpTab, &genTab, &seqTab, &evolveTab, &kitTab, &chopTab })
+    for (auto* tab : { &sliceTab, &padTab, &arpTab, &genTab, &seqTab, &evolveTab, &kitTab, &chopTab, &chordTab })
     {
         tab->setRadioGroupId (2);
         tab->setClickingTogglesState (true);
@@ -229,6 +231,55 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     evolveTab.onClick = [this] { showPanel (Panel::evolve); };
     kitTab.onClick    = [this] { showPanel (Panel::kit); };
     chopTab.onClick   = [this] { showPanel (Panel::chop); };
+    chordTab.onClick  = [this] { showPanel (Panel::chord); };
+
+    // ---- Chord panel (v1.9) ----
+    chordTitle.setText ("CHORD", juce::dontSendNotification);
+    chordTitle.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    chordsMode.addItemList ({ "Chords: off", "Chords: harmonize slices", "Chords: chord pads" }, 1);
+    chordsMode.setTooltip ("Harmonize: every pitched slice (and Keys mode) plays the song key's chord on its note; drums stay single. "
+                           "Chord pads: pads 1-8 of each bank are the key's chords I..VII + octave, pads 9-16 the same one shape richer, "
+                           "played with the chord sound (the Keys-mode slice)");
+    attachCombo (chordsMode, ParamIDs::chords);
+    for (auto* n : neuro::chordShapeNames) chordShapeBox.addItem (juce::String ("Shape: ") + n, chordShapeBox.getNumItems() + 1);
+    attachCombo (chordShapeBox, ParamIDs::chordShape);
+    chordShapeBox.setTooltip ("Chord shape stacked from the scale: triad, 7th, 9th, sus2, sus4, power (root-5th-octave), 7sus4");
+    for (auto* n : neuro::chordVoicingNames) chordVoicingBox.addItem (juce::String ("Voicing: ") + n, chordVoicingBox.getNumItems() + 1);
+    attachCombo (chordVoicingBox, ParamIDs::chordVoicing);
+    chordVoicingBox.setTooltip ("Close: every tone as near its slice's pitch as possible (cleanest). Drop 2: the second-highest tone "
+                                "an octave down (open, piano/guitar). Wide: the root an octave down");
+    chordRenderBox.addItemList ({ "Pitch: keep length", "Pitch: resample" }, 1);
+    attachCombo (chordRenderBox, ParamIDs::chordRender);
+    chordRenderBox.setTooltip ("Keep length: chord tones are rendered in the background and keep the slice's timing. "
+                               "Resample: instant, higher tones are shorter (classic sampler)");
+    attachSlider (chordStrum, ParamIDs::chordStrum);
+    chordStrum.setTextValueSuffix (" ms strum");
+    chordStrum.setTextBoxStyle (juce::Slider::TextBoxRight, false, 90, 20);
+    chordStrum.setTooltip ("Delay between chord tones, low to high (0 = all at once)");
+    static constexpr const char* voiceLabels[] { "Root", "3rd", "5th", "7th/9th" };
+    for (int v = 0; v < 4; ++v)
+    {
+        auto& box = chordVoiceBoxes[(size_t) v];
+        box.addItem (juce::String (voiceLabels[v]) + ": same", 1);
+        for (int i = 1; i <= neuro::numPads; ++i)
+            box.addItem (juce::String (voiceLabels[v]) + ": slice " + juce::String (i), i + 1);
+        attachCombo (box, ParamIDs::chordVoice[v]);
+        box.setTooltip ("Timbre chords: play this chord tone with another slice (e.g. root = bass, 3rd = vocal, 5th = pad). "
+                        "'Same' uses the slice being played");
+    }
+    chordUseSlice.setTooltip ("Chord pads (and Keys mode) play the slice selected on the waveform");
+    chordUseSlice.onClick = [this]
+    {
+        if (const auto sel = waveform.getSelectedSlice(); sel >= 0)
+            proc.setKeyboardSlice (sel);
+        updateChordPanel();
+    };
+    for (auto* l : { &chordNow, &chordPadNames, &chordSound })
+        l->setFont (juce::FontOptions (12.0f));
+    chordPadNames.setJustificationType (juce::Justification::topLeft);
+    chordNow.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    for (auto* c : chordPanelComponents())
+        addAndMakeVisible (c);
 
     // ---- Chop panel ----
     chopTitle.setText ("CHOP", juce::dontSendNotification);
@@ -1323,7 +1374,8 @@ void NeuroMPCEditor::registerMappables()
              { &extractAiButton, "kit.extractAi" }, { &teachKick, "kit.teachKick" }, { &teachSnare, "kit.teachSnare" }, { &teachHat, "kit.teachHat" }, { &teachClear, "kit.teachClear" }, { &showStems, "kit.showStems" }, { &kitToPads, "kit.toPads" }, { &repeatLock, "repeat.lock" }, { &skinBox, "view.skin" },
              { &chopTab, "view.chop" }, { &chopMode, "chop.mode" }, { &chopGrid, "chop.grid" }, { &chopSensitivity, "chop.sensitivity" },
              { &chopButton, "chop.go" }, { &chopSnap, "chop.snap" }, { &slicesToPads, "chop.slicesToPads" }, { &chopKitToPads, "chop.kitToPads" },
-             { &levelsMode, "chop.levels" }, { &splitStemsButton, "kit.splitStems" } })
+             { &levelsMode, "chop.levels" }, { &splitStemsButton, "kit.splitStems" }, { &chordTab, "view.chord" },
+             { &chordUseSlice, "chord.useSlice" } })
         id (*c, name);
 
     for (int pc = 0; pc < 12; ++pc)
@@ -1787,6 +1839,67 @@ std::vector<juce::Component*> NeuroMPCEditor::kitPanelComponents()
     return list;
 }
 
+std::vector<juce::Component*> NeuroMPCEditor::chordPanelComponents()
+{
+    return { &chordTitle, &chordsMode, &chordShapeBox, &chordVoicingBox, &chordRenderBox, &chordStrum, &chordUseSlice, &chordNow,
+             &chordPadNames, &chordSound, &chordVoiceBoxes[0], &chordVoiceBoxes[1], &chordVoiceBoxes[2], &chordVoiceBoxes[3] };
+}
+
+void NeuroMPCEditor::updateChordPanel()
+{
+    // The 16 chord pads of the current bank in the current key and shape.
+    const auto padMode = (int) proc.apvts.getRawParameterValue (ParamIDs::chords)->load() == 2;
+    juce::String grid;
+
+    for (int row = 0; row < 2; ++row)
+    {
+        grid << (row == 0 ? "Pads 1-8:   " : "Pads 9-16:  ");
+
+        for (int i = 0; i < 8; ++i)
+        {
+            const auto c = proc.getPadChord (row * 8 + i);
+            grid << juce::String (c.name()) << (i == 7 ? "'" : "") << " (" << juce::String (c.numeral()) << ")" << (i < 7 ? "   " : "");
+        }
+
+        grid << "\n";
+    }
+
+    const auto key = juce::String (neuro::pitchClassName (proc.getEffectiveKeyRoot())) + " "
+                     + neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1,
+                                                           (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load())].name;
+    const auto chromatic = (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load() == 0;
+    chordPadNames.setText ("Key " + key + (chromatic ? " (chords from the major scale)" : "") + (padMode ? "   (chord pads on)" : "   (chord pads: choose Chords: chord pads)") + "\n" + grid,
+                           juce::dontSendNotification);
+
+    const auto last = proc.getLastChord();
+    if (last >= 0)
+    {
+        const auto shape = (neuro::ChordShape) ((last >> 8) & 0xF);
+        const auto mask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1,
+                                                              (int) proc.apvts.getRawParameterValue (ParamIDs::scale)->load())].mask;
+        const auto c = neuro::diatonicChord ((last >> 4) & 0xF, mask, proc.getEffectiveKeyRoot(), shape);
+        chordNow.setText (juce::String (c.name()) + "  " + juce::String (c.numeral()), juce::dontSendNotification);
+    }
+    else
+    {
+        chordNow.setText ("-", juce::dontSendNotification);
+    }
+
+    const auto& slices = proc.getSlices();
+    const auto k = proc.getKeyboardSlice();
+    chordSound.setText ("Chord sound: " + (k < slices.size() ? "slice " + juce::String (k + 1) : juce::String ("none")),
+                        juce::dontSendNotification);
+
+    // Timbre-chord slot boxes: grey out slices that don't exist.
+    if (slices.size() != shownChordSlices)
+    {
+        shownChordSlices = slices.size();
+        for (auto& box : chordVoiceBoxes)
+            for (int i = 1; i <= neuro::numPads; ++i)
+                box.setItemEnabled (i + 1, i <= slices.size());
+    }
+}
+
 std::vector<juce::Component*> NeuroMPCEditor::chopPanelComponents()
 {
     return { &chopTitle, &chopInfo, &chopMode, &chopGrid, &chopSensitivity, &chopButton, &chopSnap, &slicesToPads, &chopKitToPads,
@@ -1975,6 +2088,7 @@ void NeuroMPCEditor::showPanel (Panel p)
     for (auto* c : evolvePanelComponents()) c->setVisible (p == Panel::evolve);
     for (auto* c : kitPanelComponents())    c->setVisible (p == Panel::kit);
     for (auto* c : chopPanelComponents())   c->setVisible (p == Panel::chop);
+    for (auto* c : chordPanelComponents())  c->setVisible (p == Panel::chord);
 
     info.setVisible (p == Panel::slice || p == Panel::pad || p == Panel::arp); // the others use the info area too
 
@@ -1986,6 +2100,8 @@ void NeuroMPCEditor::showPanel (Panel p)
     evolveTab.setToggleState (p == Panel::evolve, juce::dontSendNotification);
     kitTab.setToggleState (p == Panel::kit, juce::dontSendNotification);
     chopTab.setToggleState (p == Panel::chop, juce::dontSendNotification);
+    chordTab.setToggleState (p == Panel::chord, juce::dontSendNotification);
+    if (p == Panel::chord) updateChordPanel();
     if (p == Panel::chop) updateChopPanel();
 
     if (p == Panel::pad) updatePadPanel();
@@ -2257,6 +2373,7 @@ void NeuroMPCEditor::timerCallback()
     if (activePanel == Panel::seq) updateSeqPanel();
     if (activePanel == Panel::evolve) updateEvolvePanel();
     if (activePanel == Panel::kit) updateKitPanel();
+    if (activePanel == Panel::chord) updateChordPanel();
 
     updateInfo();
     updateSlicePanel();
@@ -2675,14 +2792,15 @@ void NeuroMPCEditor::resized()
     bottom.removeFromTop (8);
     panelDeck = bottom;
     auto tabs = bottom.removeFromTop (24);
-    sliceTab.setBounds (tabs.removeFromLeft (70));
-    padTab.setBounds (tabs.removeFromLeft (70));
-    arpTab.setBounds (tabs.removeFromLeft (70));
-    genTab.setBounds (tabs.removeFromLeft (70));
-    seqTab.setBounds (tabs.removeFromLeft (70));
+    sliceTab.setBounds (tabs.removeFromLeft (64));
+    padTab.setBounds (tabs.removeFromLeft (56));
+    arpTab.setBounds (tabs.removeFromLeft (56));
+    genTab.setBounds (tabs.removeFromLeft (56));
+    seqTab.setBounds (tabs.removeFromLeft (56));
     evolveTab.setBounds (tabs.removeFromLeft (76));
     kitTab.setBounds (tabs.removeFromLeft (60));
     chopTab.setBounds (tabs.removeFromLeft (64));
+    chordTab.setBounds (tabs.removeFromLeft (70));
     skinBox.setBounds (tabs.removeFromRight (104));
     tabs.removeFromRight (6);
     titleArea = tabs;
@@ -2953,6 +3071,41 @@ void NeuroMPCEditor::resized()
         repeatGate.setBounds (rr);
         right.removeFromTop (4);
         repeatSwing.setBounds (right.removeFromTop (22).withTrimmedRight (64));
+    }
+
+    // Chord panel: settings on the left, the chord now playing on the right, the pad chord chart below.
+    {
+        auto hp = panelArea.withBottom (bottom.getBottom());
+        auto right = hp.removeFromRight (juce::jmin (220, hp.getWidth() / 4));
+        hp.removeFromRight (12);
+        auto row = [&hp] (int h = 24) { auto r = hp.removeFromTop (h); hp.removeFromTop (6); return r; };
+        auto r0 = row();
+        chordTitle.setBounds (r0.removeFromLeft (60));
+        for (auto [c, w] : std::initializer_list<std::pair<juce::Component*, int>> { { &chordsMode, 210 }, { &chordShapeBox, 130 },
+                                                                                     { &chordVoicingBox, 150 } })
+        {
+            c->setBounds (r0.removeFromLeft (w));
+            r0.removeFromLeft (6);
+        }
+        auto r1 = row();
+        r1.removeFromLeft (60);
+        chordRenderBox.setBounds (r1.removeFromLeft (170));
+        r1.removeFromLeft (6);
+        chordStrum.setBounds (r1.removeFromLeft (230));
+        auto r2 = row();
+        r2.removeFromLeft (60);
+        for (auto& b : chordVoiceBoxes)
+        {
+            b.setBounds (r2.removeFromLeft (124));
+            r2.removeFromLeft (6);
+        }
+        chordPadNames.setBounds (row (54));
+
+        chordNow.setBounds (right.removeFromTop (30));
+        right.removeFromTop (6);
+        chordSound.setBounds (right.removeFromTop (20));
+        right.removeFromTop (6);
+        chordUseSlice.setBounds (right.removeFromTop (24).withWidth (160));
     }
 
     // Kit panel: timbre map on the left, controls on the right; also uses the info area.

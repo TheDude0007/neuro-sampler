@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.9.0 (2026-11-19): Chords
+- **New CHORD tab.** Chords are built from the song key, so they're always in key.
+- **Harmonize:** every pitched slice plays the key's chord on its own note (A in C major plays A minor). This works from pads, Keys mode, the arp and the sequencer. Drums stay single.
+- **Chord pads:** pads 1–8 of each bank are the key's chords I–VII plus the octave. Pads 9–16 are the same chords one shape richer (triads become 7ths, 7ths become 9ths). They play the chord sound (the Keys-mode slice; **Sound: selected slice** picks it), and empty pads play chords too.
+- **7 shapes:** triad, 7th, 9th, sus2, sus4, power, 7sus4.
+- **3 voicings:**
+  - **Close:** each tone as near the slice's own pitch as possible, so it sounds cleanest.
+  - **Drop 2:** an open, piano/guitar-style voicing.
+  - **Wide:** the root an octave down.
+- **Strum:** 0–120 ms between tones, low to high.
+- **Timbre chords:** play each chord tone with a different slice, for example root = bass stem, 3rd = vocal chop, 5th = pad.
+- **Keep length (default):** chord tones are rendered in the background, so the chord keeps the slice's timing. **Resample** is instant and classic.
+- The CHORD tab shows the chord now playing (name + Roman numeral) and the 16 pad chords for the current key.
+- 9 new automatable parameters, all MIDI-mappable.
+
+
 ## 1.8.0 (2026-11-12): Song key, chord names, Play In
 - **Song key, set for you:** loading a sample detects its key and sets the **song key** (the root and scale boxes under the knobs). Keys mode, the arp and Chord-Lock follow it. Projects and presets keep their saved key; **Key... > Lock** keeps your own.
 - **Better key detection:** the "bgate" key profiles (Faraldo et al.) and overtone subtraction. On labelled real melodies: 5 of 7 right, up from 3.

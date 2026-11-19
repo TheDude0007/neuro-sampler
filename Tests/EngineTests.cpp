@@ -209,6 +209,24 @@ namespace
         return file;
     }
 
+    // Amplitude of the partial at MIDI pitch `midi` in x[start, start + length) (Goertzel, Hann window).
+    double levelAt (const std::vector<float>& x, int start, int length, double midi)
+    {
+        const auto hz = 440.0 * std::exp2 ((midi - 69.0) / 12.0);
+        const auto w = 2.0 * juce::MathConstants<double>::pi * hz / rate;
+        double re = 0.0, im = 0.0, norm = 0.0;
+
+        for (int i = 0; i < length; ++i)
+        {
+            const auto win = 0.5 - 0.5 * std::cos (2.0 * juce::MathConstants<double>::pi * i / (length - 1));
+            re += x[(size_t) (start + i)] * win * std::cos (w * i);
+            im -= x[(size_t) (start + i)] * win * std::sin (w * i);
+            norm += win;
+        }
+
+        return 2.0 * std::sqrt (re * re + im * im) / norm;
+    }
+
     void setParam (NeuroMPCProcessor& p, const char* id, float value)
     {
         auto* param = p.apvts.getParameter (id);
@@ -851,7 +869,8 @@ int main()
             "arpHumanVelocity", "seqMode", "seqPattern", "seqRate", "seqSwing", "seqFill", "weaveAccent", "weaveAccentAmount",
             "weaveFill", "weaveFillEvery", "weavePitch", "padBank", "padBankFollow", "padChannel", "levelKick", "levelSnare",
             "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2", "levelFloorTom", "levelCrash", "levelRide", "levelPerc", "levelTonal", "chordLock", "chordInput", "chordSplit", "midiClockIn", "midiClockOut", "midiLinkPort", "drumOutputs", "noteRepeat", "repeatRate", "repeatGate", "repeatSwing", "repeatLatch",
-            "songKeyLock", "playKey", "keyShiftMode", "keyShiftScope" };
+            "songKeyLock", "playKey", "keyShiftMode", "keyShiftScope", "chords", "chordShape", "chordVoicing", "chordRender", "chordStrum",
+            "chordVoiceRoot", "chordVoice3rd", "chordVoice5th", "chordVoice7th" };
         NeuroMPCProcessor a;
         juce::StringArray ids;
         for (auto* param : a.getParameters())
@@ -1690,6 +1709,81 @@ int main()
         CHECK (! neuro::keyShiftEligible (drum, false) && neuro::keyShiftEligible (drum, true));
         drum.detectedHarmonic = true;
         CHECK (neuro::keyShiftEligible (drum, false));
+    }
+
+    // ---- v1.9 Chords: Harmonize, chord pads, keep length, strum, voicing; drums stay single ----
+    {
+        auto toneFile = writeToneWav (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("neuro_chords19.wav"), 220.0, 2.0);
+        NeuroMPCProcessor ch;
+        ch.prepareToPlay (rate, block);
+        CHECK (ch.loadSample (toneFile, error));
+        setParam (ch, ParamIDs::attack, 0.0f);
+        CHECK (ch.waitForBackgroundWork (20000));
+        setParam (ch, ParamIDs::scaleRoot, 0.0f);   // C major
+        setParam (ch, ParamIDs::scale, (float) neuro::scaleMajor);
+        auto play = [&] (int note = 36) { return capture (ch, 300, { { 1, note, 1.0f } }); };
+        auto has = [] (const std::vector<float>& x, int at, double midi) { return levelAt (x, at, 8192, midi); };
+
+        // Harmonize (resample): A3 plays A minor on its note, close voicing nearest the slice: E3 A3 C4.
+        setParam (ch, ParamIDs::chords, 1.0f);
+        setParam (ch, ParamIDs::chordRender, 1.0f);
+        auto x = play();
+        const auto off = has (x, 6000, 62.0);       // D4: not in the chord
+        std::printf ("  Harmonize A3 in C: E3 %.3f A3 %.3f C4 %.3f (D4 %.4f), chord %s\n", has (x, 6000, 52.0), has (x, 6000, 57.0),
+                     has (x, 6000, 60.0), off, neuro::diatonicChord ((ch.getLastChord() >> 4) & 0xF, neuro::scales[neuro::scaleMajor].mask, 0,
+                                                                    neuro::ChordShape::triad).name().c_str());
+        CHECK (has (x, 6000, 52.0) > 20 * off && has (x, 6000, 57.0) > 20 * off && has (x, 6000, 60.0) > 20 * off);
+        CHECK ((ch.getLastChord() & 0xF) == 9);     // root A
+        CHECK (std::abs (audibleLength (x) - 96000 * std::exp2 (5.0 / 12.0)) < 400); // the longest voice: E3, resampled down 5
+
+        // Keep length: every voice is a background render at the slice's own length.
+        setParam (ch, ParamIDs::chordRender, 0.0f);
+        ch.processBackgroundResults();
+        CHECK (ch.waitForBackgroundWork (120000));
+        x = play();
+        std::printf ("  Harmonize keep length: %d samples (original 96000)\n", audibleLength (x));
+        CHECK (std::abs (audibleLength (x) - 96000) < 960 && has (x, 6000, 52.0) > 20 * off && has (x, 6000, 60.0) > 20 * off);
+
+        // Strum 50 ms upwards: only the lowest tone (E3) sounds in the first 2400 samples.
+        setParam (ch, ParamIDs::chordStrum, 50.0f);
+        x = play();
+        const auto early = 512 + 64;                 // the note starts at block 1
+        std::printf ("  strum: E3 %.3f A3 %.4f C4 %.4f in the first 40 ms\n", levelAt (x, early, 1800, 52.0), levelAt (x, early, 1800, 57.0),
+                     levelAt (x, early, 1800, 60.0));
+        CHECK (levelAt (x, early, 1800, 52.0) > 10 * levelAt (x, early, 1800, 57.0) && levelAt (x, early, 1800, 52.0) > 10 * levelAt (x, early, 1800, 60.0));
+        setParam (ch, ParamIDs::chordStrum, 0.0f);
+
+        // Chord pads: pad A1 = I (C: C4 E4 G3 nearest A3), pad A5 = V (G: G3 B3 D3); empty pads play chords too.
+        setParam (ch, ParamIDs::chords, 2.0f);
+        setParam (ch, ParamIDs::chordRender, 1.0f);
+        x = play (36);
+        CHECK (has (x, 6000, 60.0) > 20 * off && has (x, 6000, 64.0) > 20 * off && has (x, 6000, 55.0) > 20 * off && (ch.getLastChord() & 0xF) == 0);
+        const auto offV = has (x, 6000, 53.0);
+        x = play (40);
+        std::printf ("  chord pads: A5 = %s (G3 %.3f B3 %.3f D3 %.3f)\n", ch.getPadChord (4).name().c_str(), has (x, 6000, 55.0), has (x, 6000, 59.0), has (x, 6000, 50.0));
+        CHECK (ch.getPadChord (4).name() == "G" && ch.getPadChord (4).numeral() == "V" && ch.getPadChord (12).name() == "G7");
+        CHECK (ch.getPadChord (1).name() == "Dm" && ch.getPadChord (6).name() == "Bdim" && ch.getPadChord (7).name() == "C");
+        CHECK (has (x, 6000, 55.0) > 20 * offV && has (x, 6000, 59.0) > 20 * offV && has (x, 6000, 50.0) > 20 * offV && (ch.getLastChord() & 0xF) == 7);
+
+        // Drop 2: the second-highest tone of C (C4 in G3 C4 E4) drops an octave to C3; G3 and E4 stay.
+        setParam (ch, ParamIDs::chordVoicing, 1.0f);
+        x = play (36);
+        CHECK (has (x, 6000, 48.0) > 20 * off && has (x, 6000, 55.0) > 20 * off && has (x, 6000, 64.0) > 20 * off);
+        setParam (ch, ParamIDs::chordVoicing, 0.0f);
+
+        // Timbre chords: a voice slot pointing at a missing slice falls back to the played slice (still three tones).
+        setParam (ch, ParamIDs::chordVoice[2], 40.0f);
+        x = play (36);
+        CHECK (has (x, 6000, 55.0) > 20 * off);
+        setParam (ch, ParamIDs::chordVoice[2], 0.0f);
+
+        // Harmonize leaves drums alone.
+        setParam (ch, ParamIDs::chords, 1.0f);
+        ch.editSlices ([] (auto& s) { s.setDrumClass (0, (int) neuro::DrumClass::kick); });
+        x = play();
+        CHECK (std::abs (midiOf (x, 4800, 9600) - 57.0) < 0.05);
+        setParam (ch, ParamIDs::chords, 0.0f);
+        toneFile.deleteFile();
     }
 
     // ---- Separate drums (NMF): simultaneous hits -> both lanes; isolated stems on their own outputs; stems sum back ----

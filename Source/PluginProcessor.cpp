@@ -80,6 +80,13 @@ NeuroMPCProcessor::NeuroMPCProcessor()
 
     chordLockParam  = apvts.getRawParameterValue (ParamIDs::chordLock);
     chordInputParam = apvts.getRawParameterValue (ParamIDs::chordInput);
+    chordsParam       = apvts.getRawParameterValue (ParamIDs::chords);
+    chordShapeParam   = apvts.getRawParameterValue (ParamIDs::chordShape);
+    chordVoicingParam = apvts.getRawParameterValue (ParamIDs::chordVoicing);
+    chordRenderParam  = apvts.getRawParameterValue (ParamIDs::chordRender);
+    chordStrumParam   = apvts.getRawParameterValue (ParamIDs::chordStrum);
+    for (int i = 0; i < 4; ++i)
+        chordVoiceParams[(size_t) i] = apvts.getRawParameterValue (ParamIDs::chordVoice[i]);
     chordSplitParam = apvts.getRawParameterValue (ParamIDs::chordSplit);
     clockInParam    = apvts.getRawParameterValue (ParamIDs::clockIn);
     clockOutParam   = apvts.getRawParameterValue (ParamIDs::clockOut);
@@ -267,6 +274,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
                 std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::repeatSwing, 1 }, "Note Repeat Swing",
                                                        NormalisableRange<float> (50.0f, 75.0f, 1.0f), 50.0f, AudioParameterFloatAttributes().withLabel ("%")),
                 std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::repeatLatch, 1 }, "Note Repeat Latch", false));
+
+    // v1.9 chords from the song key. Harmonize: each pitched slice plays the key's chord on its note. Chord pads: pads
+    // 1-8 of a bank are the degrees I .. VII + octave, 9-16 the same one shape richer; they play the Keys-mode slice.
+    layout.add (std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chords, 1 }, "Chords",
+                                                        StringArray { "Off", "Harmonize", "Chord pads" }, 0),
+                std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chordShape, 1 }, "Chord Shape",
+                                                        [] { StringArray a; for (auto* n : neuro::chordShapeNames) a.add (n); return a; }(), 0),
+                std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chordVoicing, 1 }, "Chord Voicing",
+                                                        [] { StringArray a; for (auto* n : neuro::chordVoicingNames) a.add (n); return a; }(), 0),
+                std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::chordRender, 1 }, "Chord Pitch Mode",
+                                                        StringArray { "Keep length", "Resample" }, 0),
+                std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::chordStrum, 1 }, "Chord Strum",
+                                                       NormalisableRange<float> (0.0f, 120.0f, 1.0f), 0.0f, AudioParameterFloatAttributes().withLabel ("ms")));
+
+    // Timbre chords: each chord tone from a different slice (0 = the played slice).
+    static constexpr const char* voiceNames[] { "Chord Root Slice", "Chord 3rd Slice", "Chord 5th Slice", "Chord 7th/9th Slice" };
+    for (int i = 0; i < 4; ++i)
+        layout.add (std::make_unique<AudioParameterInt> (ParameterID { ParamIDs::chordVoice[i], 1 }, voiceNames[i], 0, neuro::numPads, 0,
+                                                         AudioParameterIntAttributes().withStringFromValueFunction (
+                                                             [] (int v, int) { return v == 0 ? String ("Same") : "Slice " + String (v); })));
     return layout;
 }
 
@@ -340,6 +367,18 @@ void NeuroMPCProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     vp.keyShift = vp.keyboardMode ? 0 : getKeyShift(); // Keys mode: the player picks the notes
     vp.keyShiftKeepLength = keyShiftModeParam->load() < 0.5f;
     vp.keyShiftAll = keyShiftScopeParam->load() > 0.5f;
+    vp.chordPads = (int) chordsParam->load();
+    vp.chordShape = (neuro::ChordShape) juce::jlimit (0, 6, (int) chordShapeParam->load());
+    vp.chordVoicing = (neuro::ChordVoicing) juce::jlimit (0, 2, (int) chordVoicingParam->load());
+    vp.chordKeepLength = chordRenderParam->load() < 0.5f;
+    vp.strumSamples = (int) (chordStrumParam->load() * 0.001 * hostSampleRate);
+
+    if (sl != nullptr)
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto n = (int) chordVoiceParams[(size_t) i]->load();
+            vp.voiceSliceIds[(size_t) i] = n > 0 && n <= sl->size() ? sl->getSlices()[(size_t) n - 1].id : 0;
+        }
 
     // Host timing, shared by the pitch LFO and the arpeggiator. Never derived from the GUI.
     const auto numSamples = buffer.getNumSamples();
@@ -2241,8 +2280,23 @@ int NeuroMPCProcessor::getKeyShift() const noexcept
 
 int NeuroMPCProcessor::variantSignature() const
 {
-    return ((getKeyShift() + 16) * 4 + (int) keyShiftModeParam->load() * 2 + (int) keyShiftScopeParam->load()) * 8
-           + (int) chordLockParam->load() * 2 + (isKeyboardMode() ? 1 : 0);
+    auto h = (uint32_t) (((getKeyShift() + 16) * 4 + (int) keyShiftModeParam->load() * 2 + (int) keyShiftScopeParam->load()) * 8
+                         + (int) chordLockParam->load() * 2 + (isKeyboardMode() ? 1 : 0));
+    // Chords: which slices get voice renders.
+    for (const auto v : { (int) chordsParam->load(), (int) chordRenderParam->load(), keyboardSliceIndex.load(),
+                          (int) chordVoiceParams[0]->load(), (int) chordVoiceParams[1]->load(), (int) chordVoiceParams[2]->load(),
+                          (int) chordVoiceParams[3]->load() })
+        h = h * 131u + (uint32_t) (v + 1);
+
+    return (int) h;
+}
+
+neuro::DiatonicChord NeuroMPCProcessor::getPadChord (int padInBank) const noexcept
+{
+    const auto mask = neuro::scales[(size_t) juce::jlimit (0, (int) neuro::scales.size() - 1, (int) scaleParam->load())].mask;
+    auto shape = (neuro::ChordShape) juce::jlimit (0, 6, (int) chordShapeParam->load());
+    const auto inBank = ((padInBank % neuro::padsPerBank) + neuro::padsPerBank) % neuro::padsPerBank;
+    return neuro::diatonicChord (inBank % 8, mask, getEffectiveKeyRoot(), inBank >= 8 ? neuro::richerShape (shape) : shape);
 }
 
 std::optional<neuro::KeyEstimate> NeuroMPCProcessor::getBestKeyEstimate (bool* fromStems, bool allowUncertain) const
@@ -2330,6 +2384,19 @@ void NeuroMPCProcessor::refreshStretch()
         const auto keyShift = isKeyboardMode() || keyShiftModeParam->load() > 0.5f ? 0 : getKeyShift();
         const auto keyAll = keyShiftScopeParam->load() > 0.5f;
         const auto chordKeep = (int) chordLockParam->load() == 2;
+        const auto chordsMode = (int) chordsParam->load();
+        const auto chordVoices = chordsMode != 0 && chordRenderParam->load() < 0.5f;
+        std::vector<int> voiceSlices; // slice indices that play chord voices: the Keys-mode slice and the timbre-chord slots
+
+        if (chordVoices)
+        {
+            if (chordsMode == 2 || isKeyboardMode())
+                voiceSlices.push_back (keyboardSliceIndex.load());
+
+            for (auto* v : chordVoiceParams)
+                if (const auto n = (int) v->load(); n > 0)
+                    voiceSlices.push_back (n - 1);
+        }
 
         for (const auto& s : slices.getSlices())
         {
@@ -2343,6 +2410,19 @@ void NeuroMPCProcessor::refreshStretch()
                 for (int k = -6; k <= 5; ++k)
                     if (k != 0 && base + k != 0)
                         extras.push_back (base + k);
+
+            // Chords (keep length): each voice is a whole-semitone variant of its slice, -7 .. +7 (wider shifts resample).
+            if (chordVoices)
+            {
+                const auto index = slices.indexOfId (s.id);
+                auto voiced = std::find (voiceSlices.begin(), voiceSlices.end(), index) != voiceSlices.end()
+                              || (chordsMode == 1 && neuro::chordLockEligible (s));
+
+                if (voiced)
+                    for (int k = -7; k <= 7; ++k)
+                        if (k != 0 && std::find (extras.begin(), extras.end(), k) == extras.end())
+                            extras.push_back (k);
+            }
 
             for (const auto extra : extras)
             {
@@ -2360,7 +2440,7 @@ void NeuroMPCProcessor::refreshStretch()
                 else if (std::find (chordRequested.begin(), chordRequested.end(), key) == chordRequested.end())
                 {
                     chordRequested.push_back (key);
-                    stretchRenderer.request (1000000 + s.id * 32 + extra + 12, { sample, sampleVersion, variant });
+                    stretchRenderer.request (1000000 + s.id * 32 + extra + 12, { sample, sampleVersion, variant }); // extra: -12 .. +19
                 }
             }
         }

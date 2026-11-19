@@ -84,6 +84,13 @@ namespace ParamIDs
     inline constexpr auto repeatGate   = "repeatGate";
     inline constexpr auto repeatSwing  = "repeatSwing";
     inline constexpr auto repeatLatch  = "repeatLatch";
+    // v1.9 chords from the song key.
+    inline constexpr auto chords       = "chords";
+    inline constexpr auto chordShape   = "chordShape";
+    inline constexpr auto chordVoicing = "chordVoicing";
+    inline constexpr auto chordRender  = "chordRender";
+    inline constexpr auto chordStrum   = "chordStrum";
+    inline constexpr const char* chordVoice[] { "chordVoiceRoot", "chordVoice3rd", "chordVoice5th", "chordVoice7th" };
     // Per drum-class level, in DrumClass order.
     inline constexpr const char* classLevel[] { "levelKick", "levelSnare", "levelClosedHat", "levelOpenHat", "levelTom1", "levelTom2",
                                                 "levelFloorTom", "levelCrash", "levelRide", "levelPerc", "levelTonal" };
@@ -266,6 +273,9 @@ public:
     std::optional<neuro::KeyEstimate> getBestKeyEstimate (bool* fromStems = nullptr, bool allowUncertain = false) const;
     int getEffectiveKeyRoot() const noexcept;                   // the Play In key if set, else the song key root
     int getKeyShift() const noexcept;                           // Play In shift, -6 .. +5 semitones
+    // Chords (v1.9): the chord pad n (0..15 of a bank) plays in the current key and shape; the last chord played (or -1).
+    neuro::DiatonicChord getPadChord (int padInBank) const noexcept;
+    int getLastChord() const noexcept { return engine.getLastChord(); }
 
     // Keyboard mode plays one slice chromatically from its root (manual Root, else detected pitch, else C4).
     void setKeyboardSlice (int sliceIndex);
@@ -372,6 +382,9 @@ private:
     int chordKeysDown = 0;
     std::vector<neuro::StretchKey> chordRequested;
     std::atomic<float> *chordLockParam = nullptr, *chordInputParam = nullptr, *chordSplitParam = nullptr;
+    std::atomic<float> *chordsParam = nullptr, *chordShapeParam = nullptr, *chordVoicingParam = nullptr, *chordRenderParam = nullptr,
+                       *chordStrumParam = nullptr;
+    std::array<std::atomic<float>*, 4> chordVoiceParams {};
     std::atomic<float> *clockInParam = nullptr, *clockOutParam = nullptr, *linkPortParam = nullptr, *drumOutputsParam = nullptr;
     std::atomic<float> *noteRepeatParam = nullptr, *repeatRateParam = nullptr, *repeatGateParam = nullptr, *repeatSwingParam = nullptr,
                        *repeatLatchParam = nullptr;

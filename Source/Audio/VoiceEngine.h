@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SampleData.h"
+#include "../Core/Harmony.h"
 #include "../Core/PadBank.h"
 #include "../Core/Scales.h"
 #include "../Core/SliceSet.h"
@@ -33,6 +34,15 @@ struct VoiceParams
     int keyShift = 0;
     bool keyShiftKeepLength = true;
     bool keyShiftAll = false;
+
+    // Chords from the song key (scaleMask / scaleRoot): 0 off, 1 Harmonize (each pitched slice plays the key's chord
+    // on its note), 2 Chord pads (pads 1-8 / 9-16 of a bank: degrees I .. VII + octave; the keyboard slice sounds).
+    int chordPads = 0;
+    ChordShape chordShape = ChordShape::triad;
+    ChordVoicing chordVoicing = ChordVoicing::close;
+    bool chordKeepLength = true;
+    int strumSamples = 0;                    // delay between voices, upwards
+    std::array<int, 4> voiceSliceIds {};     // timbre chords: slice id per voice slot (root, 3rd, 5th, 7th/9th); 0 = same
 };
 
 // Chord-Lock: semitones to move `midi` to the nearest pitch class in `mask` (0 when the mask is empty).
@@ -98,14 +108,25 @@ public:
 
     // Starts one slice. noteTag is matched by noteOff (gate mode). Uses the slice's render from the bank when it needs
     // one and it is ready, otherwise the original region.
+    // chordVoice: voiceShift is the voice's final shift from the chord engine (key change included; no Chord-Lock),
+    // rendered keep-length in whole semitones when chordKeepLength. delaySamples: the voice starts that much later (strum).
     void playSlice (int sliceIndex, int noteTag, float level, float pitchOffset, int chokeGroup, const SampleData&,
-                    const SliceSet&, const StretchBank*, const VoiceParams&) noexcept;
+                    const SliceSet&, const StretchBank*, const VoiceParams&, float voiceShift = 0.0f, bool chordVoice = false,
+                    int delaySamples = 0) noexcept;
+
+    // Any thread: the last chord played (DiatonicChord degree/root/shape packed by packChord), or -1.
+    int getLastChord() const noexcept { return lastChord.load (std::memory_order_relaxed); }
+    static int packChord (const DiatonicChord& c, ChordShape shape) noexcept { return c.rootPc() | (c.degree << 4) | ((int) shape << 8); }
     void noteOff (int note) noexcept;
     void killAll() noexcept;
     // Stops voices reading renders that are no longer in the published bank (they may be freed).
     void dropVoicesNotIn (const StretchBank*, const juce::AudioBuffer<float>* sampleBuffer) noexcept;
     // modSemitones: per-sample global pitch offset (transpose, bend, LFO) applied to every voice by resampling.
     void render (const OutputBuses& out, int startSample, int numSamples, const float* modSemitones) noexcept;
+
+    // Chords: false when the slice can't be harmonised (no known pitch, or a drum), so it plays as itself.
+    bool playChord (int sourceIndex, int noteTag, float level, float pitchOffset, int chokeGroup, int padIndex, const SampleData&,
+                    const SliceSet&, const StretchBank*, const VoiceParams&) noexcept;
 
     // Any thread: original-sample position of the most recently started active voice, or -1.
     int64_t getPlayhead() const noexcept { return playhead.load (std::memory_order_relaxed); }
@@ -123,6 +144,7 @@ private:
         float gain = 0.0f, env = 0.0f, attackStep = 1.0f, releaseStep = 1.0f;
         int chokeGroup = 0;
         int drumClass = -1;
+        int delay = 0;      // samples of silence before it starts (strum)
         uint64_t order = 0;
     };
 
@@ -130,6 +152,7 @@ private:
     double hostRate = 44100.0;
     uint64_t counter = 0;
     std::atomic<int64_t> playhead { -1 };
+    std::atomic<int> lastChord { -1 };
 };
 
 } // namespace neuro

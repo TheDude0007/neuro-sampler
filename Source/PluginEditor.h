@@ -26,7 +26,7 @@ public:
     std::vector<juce::Component*> getMappableControls() const;
     int countUnmappableControls() const;          // buttons/sliders/selectors without a mapping ID (should be 0)
     void runMappedAction (int uiIndex, float value); // value 0..1 = CC, -1 = note trigger
-    void showTab (int index) { showPanel ((Panel) juce::jlimit (0, (int) Panel::chop, index)); } // 0 slice .. 6 kit, 7 chop
+    void showTab (int index) { showPanel ((Panel) juce::jlimit (0, (int) Panel::chord, index)); } // 0 slice .. 6 kit, 7 chop, 8 chord
 
 private:
     // MPC-style pad (one of 16 visible; the bank selects which 16 of the 64). Velocity from the vertical click position
@@ -69,7 +69,7 @@ private:
     void setSelectedPitch (float semitones);
     float selectedRoot() const; // reference for the 12-note selector
     void selectPad (int padIndex);
-    enum class Panel { slice, pad, arp, gen, seq, evolve, kit, chop };
+    enum class Panel { slice, pad, arp, gen, seq, evolve, kit, chop, chord };
     void showPanel (Panel);
     void applySkin (bool flash);
     void paintEdgeLights (juce::Graphics&);
@@ -89,6 +89,8 @@ private:
     void updateKitPanel();
     std::vector<juce::Component*> kitPanelComponents();
     std::vector<juce::Component*> chopPanelComponents();
+    std::vector<juce::Component*> chordPanelComponents();
+    void updateChordPanel();
     void updateChopPanel();
     // CHOP: MPC-style chopping in one place (modes, snap, keys on the waveform), slices/kit to pads, 16 Levels, and the
     // Note Repeat performance controls.
@@ -159,7 +161,7 @@ private:
     juce::ComboBox repeatRate;
     void setRepeat (bool on);
     bool repeatHeldDown = false;
-    juce::TextButton sliceTab { "SLICE" }, padTab { "PAD" }, arpTab { "ARP" }, genTab { "GEN" }, seqTab { "SEQ" }, evolveTab { "EVOLVE" }, kitTab { "KIT" }, chopTab { "CHOP" };
+    juce::TextButton sliceTab { "SLICE" }, padTab { "PAD" }, arpTab { "ARP" }, genTab { "GEN" }, seqTab { "SEQ" }, evolveTab { "EVOLVE" }, kitTab { "KIT" }, chopTab { "CHOP" }, chordTab { "CHORD" };
     int currentBank = 0, selectedPad = 0, copiedPad = -1, learnBaseline = -1, shownSliceCount = -1;
     Panel activePanel = Panel::slice;
 
@@ -247,6 +249,13 @@ private:
                      extractAiButton { "Extract drums (AI)" }, teachKick { "Teach kick" }, teachSnare { "Teach snare" }, teachHat { "Teach hat/cym" }, teachClear { "Clear taught" },
                      showStems { "Stems..." }, kitToPads { "Kit -> pads" }, splitStemsButton { "Split stems (AI)" };
     juce::ToggleButton drumOutputs { "Drum outputs" };
+    // Chord panel (v1.9): chords from the song key, chord pads, voicing, strum, timbre chords
+    juce::Label chordTitle, chordNow, chordPadNames, chordSound;
+    juce::ComboBox chordsMode, chordShapeBox, chordVoicingBox, chordRenderBox;
+    std::array<juce::ComboBox, 4> chordVoiceBoxes;
+    juce::Slider chordStrum { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::TextButton chordUseSlice { "Sound: selected slice" };
+    int shownChordSlices = -1;
 
     int shownAiState = -1;
     void updateAiStatus();
