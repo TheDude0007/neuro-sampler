@@ -175,7 +175,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeuroMPCProcessor::createLay
         std::make_unique<AudioParameterBool> (ParameterID { ParamIDs::arpLatch, 1 }, "Arp Latch", false),
         std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::arpDirection, 1 }, "Arp Direction",
                                                 StringArray { "Up", "Down", "Up-Down", "Down-Up", "As played", "Reverse played",
-                                                              "Random", "Random (no repeat)", "Chord", "Octave cycle" }, 0),
+                                                              "Random", "Random (no repeat)", "Chord", "Octave cycle",
+                                                              "Scale run", "Harmonic series", "Tonnetz walk", "Chord tones" }, 0),
         std::make_unique<AudioParameterChoice> (ParameterID { ParamIDs::arpRate, 1 }, "Arp Rate",
                                                 StringArray { "1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32" }, 6),
         std::make_unique<AudioParameterFloat> (ParameterID { ParamIDs::arpGate, 1 }, "Arp Gate",
@@ -1341,7 +1342,7 @@ void NeuroMPCProcessor::updateArpSettings (double bpm)
 {
     static constexpr double stepBeats[] { 4.0, 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
     auto a = arp.getSettings();
-    a.direction = (neuro::ArpDirection) juce::jlimit (0, 9, (int) arpDirectionParam->load());
+    a.direction = (neuro::ArpDirection) juce::jlimit (0, neuro::numArpDirections - 1, (int) arpDirectionParam->load());
     a.stepBeats = stepBeats[juce::jlimit (0, 8, (int) arpRateParam->load())];
     a.gate = arpGateParam->load() / 100.0f;
     a.octaves = (int) arpOctavesParam->load();

@@ -96,3 +96,15 @@ The arpeggiator works the same without the pad.
 - per-voice humanised pitch;
 - user-saved grammar presets;
 - a dedicated Pattern-defined direction (patterns currently shape rhythm, not order).
+
+# Melodic engine (v1.13)
+The new directions build their pattern from the **song key** (Scale + Scale Root, or the Play In key), starting from the lowest held note. In Keys mode they play pitches; in Pads mode they play the pads on those notes.
+
+| Direction | Pattern (C major, C4 held, 1 octave) |
+|---|---|
+| Scale run | C D E F G A B C, up the scale to the octave (more octaves: further) |
+| Harmonic series | C4 C5 G5 C6 E6 G6 (harmonics 1–6; 4 + 2 × octaves harmonics; off-scale harmonics snap up into the scale) |
+| Tonnetz walk | 16 steps from the note by ±3, ±4, ±5 or ±7 semitones, staying in the scale and between a 4th below and the top octave; seeded (Seed) |
+| Chord tones | each held note → its in-key triad (root, scale 3rd, scale 5th), merged and climbed over the octaves: C → C E G, D → D F A |
+
+Tests (`neuro_core_tests` arpTests): exact orders for Scale run, Harmonic series and Chord tones (C and D in C major). For the Tonnetz walk: every note is in the scale and in range, every move is a 3rd, 4th or 5th, the same seed gives the same walk, and another seed gives another.

@@ -422,6 +422,32 @@ static void arpTests()
     };
 
     CHECK ((order (ArpDirection::down) == std::vector<int> { 67, 64, 60, 67, 64, 60, 67, 64 }));
+
+    // v1.13 melodic modes, C major, one key held.
+    auto melodic = [&] (ArpDirection d, int note, uint32_t seed = 1, int count = 8)
+    {
+        ArpSettings t;
+        t.direction = d;
+        t.scaleMask = neuro::scales[(size_t) neuro::scaleMajor].mask;
+        t.scaleRoot = 0;
+        t.seed = seed;
+        return onNotes (runArp (t, { { 0, note, 0.8f } }, 6000 * (count + 1)), count);
+    };
+    CHECK ((melodic (ArpDirection::scaleRun, 60) == std::vector<int> { 60, 62, 64, 65, 67, 69, 71, 72 }));
+    CHECK ((melodic (ArpDirection::harmonicSeries, 60, 1, 6) == std::vector<int> { 60, 72, 79, 84, 88, 91 }));
+    CHECK ((melodic (ArpDirection::chordTones, 60, 1, 6) == std::vector<int> { 60, 64, 67, 60, 64, 67 }));
+    CHECK ((melodic (ArpDirection::chordTones, 62, 1, 3) == std::vector<int> { 62, 65, 69 }));      // ii in C: D F A
+    const auto walk = melodic (ArpDirection::tonnetzWalk, 60, 7, 12);
+    CHECK (walk.size() == 12 && walk == melodic (ArpDirection::tonnetzWalk, 60, 7, 12) && walk != melodic (ArpDirection::tonnetzWalk, 60, 8, 12));
+    for (size_t i = 0; i < walk.size(); ++i)
+    {
+        CHECK (((neuro::scales[(size_t) neuro::scaleMajor].mask >> (walk[i] % 12)) & 1u) != 0 && walk[i] >= 55 && walk[i] <= 72);
+        if (i > 0)
+        {
+            const auto step = std::abs (walk[i] - walk[i - 1]);
+            CHECK (step == 0 || step == 3 || step == 4 || step == 5 || step == 7);
+        }
+    }
     CHECK ((order (ArpDirection::upDown) == std::vector<int> { 60, 64, 67, 64, 60, 64, 67, 64 }));
     CHECK ((order (ArpDirection::downUp) == std::vector<int> { 67, 64, 60, 64, 67, 64, 60, 64 }));
     const std::vector<std::tuple<int64_t, int, float>> played { { 0, 67, 0.8f }, { 0, 60, 0.8f }, { 0, 64, 0.8f } };

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.13.0 (2026-11-19): Melodic engine
+- **Four new arp modes** (ARP tab ▸ direction). They follow the song key and work from a single key:
+  - **Scale run:** climbs the song scale from the lowest held note over the arp's octaves.
+  - **Harmonic series:** plays the note's natural overtones (octave, 12th, 2 octaves, 17th, …), with the out-of-key 7th/11th harmonics bent into the scale. Octaves set how many.
+  - **Tonnetz walk:** wanders by thirds, fourths and fifths, the Tonnetz's neighbours, always in key. It's seeded, so a walk repeats exactly and a new seed gives a new walk.
+  - **Chord tones:** every held key becomes its in-key chord (hold D in C major → D F A), arpeggiated up. One finger plays a whole progression's arpeggios.
+- These combine with everything the arp already had: rhythm patterns and Euclid, Grammar rules, Phrase Memory, swing, humanise.
+
+
 ## 1.12.0 (2026-11-19): Theory brain
 - **Next** (CHORD tab): the four chords most likely to follow the last chord you played, each with its probability (e.g. after V: I). Click one to hear it on the chord pads.
   - The table is learned from real progressions: 110 from free-midi-chords (MIT), plus your own MASTER CHORD LIBRARY (7,600+ progressions, read from `~/Music/MP-Key/ChordLibrary.tsv` on your Mac, never shipped).

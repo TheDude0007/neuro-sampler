@@ -12,7 +12,12 @@
 namespace neuro
 {
 
-enum class ArpDirection { up, down, upDown, downUp, asPlayed, reversePlayed, random, randomNoRepeat, chord, octaveCycle };
+// v1.13 melodic modes (appended): scaleRun walks the song scale up from the lowest held note; harmonicSeries plays its
+// natural overtones (snapped into the scale); tonnetzWalk wanders by thirds and fifths (the Tonnetz's neighbours) inside
+// the scale, seeded; chordTones builds the key's chord on the lowest held note (one key = a whole chord) and climbs it.
+enum class ArpDirection { up, down, upDown, downUp, asPlayed, reversePlayed, random, randomNoRepeat, chord, octaveCycle,
+                          scaleRun, harmonicSeries, tonnetzWalk, chordTones };
+inline constexpr int numArpDirections = (int) ArpDirection::chordTones + 1;
 enum class ArpRetrigger { off, firstNote, everyNote };
 
 struct ArpSettings
@@ -344,10 +349,69 @@ private:
         const auto octaves = settings.octaves;
         const auto dir = settings.direction;
 
+        const auto lowest = byPitch[0].note;
+        const auto mask = (settings.scaleMask & 0xFFF) == 0 ? (uint16_t) 0xFFF : settings.scaleMask;
+        auto inScale = [&] (int n) { return ((mask >> (((n - settings.scaleRoot) % 12 + 12) % 12)) & 1u) != 0; };
+        auto snapUp = [&] (int n) { for (int d = 0; d < 12; ++d) if (inScale (n + d)) return n + d; return n; };
+        auto scaleStep = [&] (int n, int steps) // moves n by whole scale degrees
+        {
+            const auto dir1 = steps > 0 ? 1 : -1;
+            for (int k = 0; k != steps; k += dir1)
+                do n += dir1; while (! inScale (n) && n > 0 && n < 127);
+            return n;
+        };
+
         if (dir == ArpDirection::chord)
         {
             for (int o = 0; o < octaves; ++o)
                 push (12 * o); // octave offsets; the chord itself is all held notes
+        }
+        else if (dir == ArpDirection::scaleRun)
+        {
+            const auto top = lowest + 12 * octaves;
+            for (int n = snapUp (lowest); n <= top && n <= 127; n = scaleStep (n, 1))
+                push (n);
+        }
+        else if (dir == ArpDirection::harmonicSeries)
+        {
+            static constexpr int partials[] { 0, 12, 19, 24, 28, 31, 34, 36, 38, 40, 42, 43 }; // harmonics 1 .. 12, rounded
+            const auto count = std::min<int> ((int) std::size (partials), 4 + 2 * octaves);
+            for (int i = 0; i < count; ++i)
+                if (const auto n = lowest + partials[i]; n <= 127)
+                    push (inScale (n) ? n : snapUp (n)); // the 7th / 11th harmonics bend into the scale
+        }
+        else if (dir == ArpDirection::tonnetzWalk)
+        {
+            // 16 steps from the lowest note by a third or a fifth, up or down, staying in the scale and the octave range.
+            static constexpr int moves[] { 3, 4, 7, -3, -4, -7, 5, -5 };
+            auto n = snapUp (lowest);
+            const auto lo = lowest - 5, hi = lowest + 12 * octaves;
+            for (int step = 0; step < 16; ++step)
+            {
+                push (n);
+                for (int attempt = 0; attempt < 16; ++attempt)
+                {
+                    const auto m = moves[hash (settings.seed, (uint32_t) step, (uint32_t) attempt, 0x70) % 8];
+                    if (const auto next = n + m; next >= lo && next <= hi && inScale (next)) { n = next; break; }
+                }
+            }
+        }
+        else if (dir == ArpDirection::chordTones)
+        {
+            // Every held note becomes its in-key triad (root, scale 3rd, scale 5th); the tones climb over the octaves.
+            std::array<int, maxHeld * 3> tones {};
+            int count = 0;
+            for (int i = 0; i < numHeld && count + 3 <= (int) tones.size(); ++i)
+            {
+                const auto r = snapUp (byPitch[(size_t) i].note);
+                for (const auto t : { r, scaleStep (r, 2), scaleStep (r, 4) })
+                    if (std::find (tones.begin(), tones.begin() + count, t) == tones.begin() + count)
+                        tones[(size_t) count++] = t;
+            }
+            std::sort (tones.begin(), tones.begin() + count);
+            for (int o = 0; o < octaves; ++o)
+                for (int i = 0; i < count; ++i)
+                    push (tones[(size_t) i] + 12 * o);
         }
         else if (dir == ArpDirection::octaveCycle)
         {

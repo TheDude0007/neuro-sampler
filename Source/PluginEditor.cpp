@@ -1070,7 +1070,8 @@ NeuroMPCEditor::NeuroMPCEditor (NeuroMPCProcessor& p) : AudioProcessorEditor (p)
     arpTitle.setText ("ARPEGGIATOR", juce::dontSendNotification);
     arpTitle.setFont (juce::FontOptions (14.0f, juce::Font::bold));
     arpDirection.addItemList ({ "Up", "Down", "Up-Down", "Down-Up", "As played", "Reverse played", "Random",
-                                "Random (no repeat)", "Chord", "Octave cycle" }, 1);
+                                "Random (no repeat)", "Chord", "Octave cycle", "Scale run", "Harmonic series",
+                                "Tonnetz walk", "Chord tones" }, 1);
     arpRate.addItemList ({ "1/1", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32" }, 1);
     arpRetrigger.addItemList ({ "Retrig: off", "Retrig: first note", "Retrig: every note" }, 1);
     arpOn.setTooltip ("Arpeggiate held notes and pads (sample-accurate; follows host tempo and transport)");

@@ -74,4 +74,4 @@ The CHORD tab shows the chord just played (for example "Am  vi") and the chord c
 - **Chord MIDI out:** each chord's notes (as voiced) go out as note-ons on the chosen channel, and the trigger's note-off releases them.
 
 ## Not yet (roadmap)
-- **v1.13:** a melodic engine (a progression-aware arp, Tonnetz walks, Euclidean and harmonic-series patterns).
+- Done in v1.13: the melodic arp modes (see ARPEGGIATOR.md).
