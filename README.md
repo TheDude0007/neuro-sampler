@@ -1,6 +1,6 @@
 # Neuro Sampler Suite
 
-An open-source, MPC-style slice sampler for macOS: VST3 (Ableton Live), AU (Logic Pro), and Standalone. Interactive tour: [neuro-sampler-suite.vercel.app](https://neuro-sampler-suite.vercel.app). Developed independently by Collin Garchar.
+An open-source, MPC-style slice sampler for macOS: VST3 (Ableton Live), AU (Logic Pro), and Standalone. Interactive tour: [neuro-sampler-suite.vercel.app](https://neuro-sampler-suite.vercel.app) · 3D manual: [neuro-sampler-suite.vercel.app/manual](https://neuro-sampler-suite.vercel.app/manual). Developed independently by Collin Garchar.
 C++20 · JUCE 9.0.4 (pinned) · CMake · AGPL-3.0.
 
 > **Beta:** testers wanted. Start with the [15-minute test guide](Documentation/BETA.md), then [send feedback](https://github.com/TheDude0007/neuro-sampler/issues/new?template=beta_feedback.yml).
