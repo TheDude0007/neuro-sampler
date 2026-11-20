@@ -1,0 +1,1236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Neuro Sampler Suite: an open-source MPC-style slice sampler that hears key, pitch, chords and drums. Developed independently by Collin Garchar.">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Neuro Sampler Suite</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+</head>
+<body>
+<style>
+/* Layout: a hardware sampler seen through a plasma lens. Full-bleed WebGL bands, content in a 1180px rail, every demo is a playable module. Single dark look by choice. */
+:root {
+  --void: #07060d;       /* page ground */
+  --deck: #110e1c;       /* module surface */
+  --deck-2: #1a1530;     /* raised surface */
+  --line: #2c2547;       /* hairlines */
+  --ink: #efeaff;        /* text */
+  --dim: #a59cc6;        /* secondary text */
+  --plasma: #ff3df2;     /* magenta accent */
+  --uv: #39f3ff;         /* cyan accent */
+  --gold: #ffd23d;       /* GOLD skin accent */
+  --lime: #9dff6a;       /* pass / good */
+  --f-display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--void); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.6; overflow-x: hidden; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--void); }
+a { color: var(--uv); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--uv); outline-offset: 3px; }
+.rail { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* scanlines + grain */
+.fx-scan { pointer-events: none; position: fixed; inset: 0; z-index: 50; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); mix-blend-mode: overlay; }
+.cursor-glow { pointer-events: none; position: fixed; width: 420px; height: 420px; border-radius: 50%; left: 0; top: 0; z-index: 1; background: radial-gradient(circle, rgba(255,61,242,.13), rgba(57,243,255,.06) 40%, transparent 70%); transform: translate(-50%,-50%); }
+
+/* top bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 40; backdrop-filter: blur(14px); background: rgba(7,6,13,.72); border-bottom: 1px solid var(--line); }
+.bar .rail { display: flex; align-items: center; gap: 16px; padding-block: 10px; }
+.logo { font-family: var(--f-display); font-weight: 800; letter-spacing: .06em; font-size: 14px; white-space: nowrap; }
+.logo b { color: var(--plasma); }
+.bar nav { display: flex; gap: 14px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.bar nav a { color: var(--dim); text-decoration: none; font-size: 13px; white-space: nowrap; font-family: var(--f-mono); }
+.bar nav a:hover { color: var(--ink); }
+.snd { border: 1px solid var(--line); background: var(--deck); border-radius: 999px; padding: 4px 12px; font-family: var(--f-mono); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.snd[aria-pressed="true"] { border-color: var(--lime); color: var(--lime); }
+@media (max-width: 760px) { .bar nav { display: none; } .snd { margin-left: auto; } }
+
+/* hero */
+.hero { position: relative; min-height: 640px; overflow: hidden; border-bottom: 1px solid var(--line); background: radial-gradient(ellipse at 70% 40%, #3a0f4a, var(--void) 70%); }
+.hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hero .rail { position: relative; z-index: 2; padding-block: 88px 64px; pointer-events: none; }
+.hero .rail a, .hero .rail button { pointer-events: auto; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--uv); }
+h1 { font-family: var(--f-display); font-weight: 900; font-size: clamp(40px, 7.4vw, 92px); line-height: .95; margin: 14px 0 22px; max-width: 11ch; text-wrap: balance; letter-spacing: -.02em; }
+.glitch { position: relative; display: inline-block; }
+.glitch::before, .glitch::after { content: attr(data-t); position: absolute; inset: 0; pointer-events: none; }
+.glitch::before { color: var(--plasma); mix-blend-mode: screen; animation: gl1 3.2s infinite steps(1); }
+.glitch::after { color: var(--uv); mix-blend-mode: screen; animation: gl2 2.7s infinite steps(1); }
+@keyframes gl1 { 0%,86%,100% { transform: none; clip-path: inset(0 0 0 0); opacity: 0; } 87% { transform: translate(-4px,1px); clip-path: inset(10% 0 55% 0); opacity: 1; } 90% { transform: translate(3px,-2px); clip-path: inset(60% 0 10% 0); opacity: 1; } 93% { opacity: 0; } }
+@keyframes gl2 { 0%,78%,100% { transform: none; opacity: 0; } 79% { transform: translate(4px,0); clip-path: inset(35% 0 40% 0); opacity: 1; } 83% { transform: translate(-2px,2px); clip-path: inset(5% 0 80% 0); opacity: 1; } 85% { opacity: 0; } }
+.lede { max-width: 54ch; font-size: clamp(16px, 1.6vw, 19px); color: #d8d0f5; text-shadow: 0 2px 18px rgba(0,0,0,.6); }
+.hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 4px; font-family: var(--f-mono); font-size: 13px; letter-spacing: .06em; text-decoration: none; text-transform: uppercase; cursor: pointer; border: 1px solid var(--line); background: rgba(17,14,28,.75); color: var(--ink); }
+.btn.hot { background: linear-gradient(100deg, var(--plasma), #8a4dff 55%, var(--uv)); color: #0a0612; border: 0; font-weight: 600; box-shadow: 0 0 32px rgba(255,61,242,.45); }
+.hint { margin-top: 28px; font-family: var(--f-mono); font-size: 12px; color: var(--dim); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.hint kbd { border: 1px solid var(--line); padding: 1px 6px; border-radius: 3px; background: var(--deck); color: var(--ink); }
+.chordtag { font-family: var(--f-display); font-weight: 800; color: var(--gold); min-width: 8ch; }
+
+/* sections */
+section.band { padding-block: 96px; position: relative; border-bottom: 1px solid var(--line); }
+.sec-head { display: grid; gap: 12px; margin-bottom: 44px; max-width: 760px; }
+h2 { font-family: var(--f-display); font-weight: 800; font-size: clamp(28px, 4.2vw, 50px); line-height: 1.02; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h3 { font-family: var(--f-display); font-weight: 600; font-size: 19px; margin: 0; letter-spacing: .01em; }
+.sec-head p { color: var(--dim); margin: 0; max-width: 64ch; }
+.grad { background: linear-gradient(90deg, var(--plasma), var(--uv)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* pillars */
+.pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; perspective: 1000px; }
+.tilt { transform-style: preserve-3d; transition: transform .25s ease, box-shadow .25s; will-change: transform; }
+.pillar { background: linear-gradient(160deg, var(--deck-2), var(--deck)); border: 1px solid var(--line); border-radius: 10px; padding: 24px; position: relative; overflow: hidden; display: grid; gap: 10px; align-content: start; }
+.pillar::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: conic-gradient(from var(--a, 0deg), transparent 0 70%, var(--plasma), var(--uv), transparent); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.pillar:hover::after { opacity: 1; animation: spin 2.4s linear infinite; }
+@property --a { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes spin { to { --a: 360deg; } }
+.pillar .k { font-family: var(--f-mono); font-size: 11px; letter-spacing: .16em; color: var(--uv); text-transform: uppercase; }
+.pillar p { margin: 0; color: var(--dim); font-size: 15px; }
+.pillar strong { color: var(--ink); font-weight: 600; }
+@media (max-width: 900px) { .pillars { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (max-width: 560px) { .pillars { grid-template-columns: 1fr; } }
+
+/* orbit */
+.orbit-wrap { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 24px; align-items: stretch; }
+.orbit-stage { position: relative; height: 560px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: radial-gradient(circle at 50% 50%, #1d0d33, var(--void) 75%); }
+.orbit-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.olabel { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: rgba(7,6,13,.78); cursor: pointer; white-space: nowrap; transition: border-color .2s, color .2s; }
+.olabel.on { border-color: var(--plasma); color: var(--plasma); box-shadow: 0 0 18px rgba(255,61,242,.5); }
+.opanel { border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(170deg, var(--deck-2), var(--deck)); padding: 26px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+.opanel .idx { font-family: var(--f-mono); color: var(--uv); font-size: 12px; letter-spacing: .14em; }
+.opanel h3 { font-size: 26px; font-weight: 800; }
+.opanel p { margin: 0; color: var(--dim); }
+.opanel ul { margin: 0; padding-left: 18px; color: var(--ink); display: grid; gap: 6px; font-size: 15px; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { font-family: var(--f-mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; color: var(--gold); background: rgba(255,210,61,.05); }
+@media (max-width: 900px) { .orbit-wrap { grid-template-columns: 1fr; } .orbit-stage { height: 440px; } }
+
+/* modules (demos) */
+.module { border: 1px solid var(--line); border-radius: 12px; background: var(--deck); overflow: hidden; }
+.module + .module { margin-top: 26px; }
+.mhead { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline; padding: 18px 22px; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, rgba(255,61,242,.08), transparent 60%); }
+.mhead .tag { font-family: var(--f-mono); font-size: 11px; color: var(--plasma); letter-spacing: .16em; text-transform: uppercase; }
+.mhead h3 { font-size: 22px; font-weight: 800; }
+.mbody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 0; }
+.mbody > div { padding: 22px; min-width: 0; }
+.mbody > div + div { border-left: 1px solid var(--line); }
+@media (max-width: 860px) { .mbody { grid-template-columns: 1fr; } .mbody > div + div { border-left: 0; border-top: 1px solid var(--line); } }
+.copy p { margin: 0 0 12px; color: var(--dim); }
+.copy p strong { color: var(--ink); }
+.modes { display: grid; gap: 10px; margin-top: 6px; }
+.mode { border-left: 2px solid var(--uv); padding: 2px 0 2px 12px; }
+.mode b { font-family: var(--f-mono); font-size: 13px; color: var(--ink); letter-spacing: .04em; }
+.mode span { display: block; color: var(--dim); font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--f-mono); font-size: 12px; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--deck-2); cursor: pointer; color: var(--dim); }
+.chip:hover { color: var(--ink); }
+.chip[aria-pressed="true"] { border-color: var(--plasma); color: var(--ink); background: rgba(255,61,242,.14); box-shadow: 0 0 14px rgba(255,61,242,.25); }
+.ctl-label { font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 14px 0 6px; }
+.ctl-label:first-child { margin-top: 0; }
+.readout { font-family: var(--f-mono); font-size: 13px; color: var(--ink); background: var(--void); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 12px; overflow-x: auto; white-space: nowrap; }
+.readout em { color: var(--gold); font-style: normal; }
+canvas.demo { width: 100%; display: block; border-radius: 8px; background: var(--void); border: 1px solid var(--line); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+
+/* keyboard */
+.kbd { position: relative; height: 92px; margin-top: 14px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.kbd .w { position: absolute; top: 0; bottom: 0; background: #e9e4fb; border-right: 1px solid #9a90c4; }
+.kbd .b { position: absolute; top: 0; height: 58%; background: #18132a; z-index: 2; border-radius: 0 0 3px 3px; }
+.kbd .on.w { background: linear-gradient(var(--plasma), #ffb6f9); }
+.kbd .on.b { background: linear-gradient(var(--plasma), #8a1d82); }
+.kbd .root.w { background: linear-gradient(var(--gold), #fff1b8); }
+.kbd .root.b { background: linear-gradient(var(--gold), #8a6b00); }
+
+/* progression */
+.prog { display: grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap: 6px; margin-top: 12px; }
+.pcell { aspect-ratio: 1; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: grid; place-items: center; font-family: var(--f-display); font-weight: 800; font-size: clamp(12px, 1.6vw, 18px); background: var(--deck-2); transition: transform .15s, background .15s; }
+.pcell.lit { background: linear-gradient(140deg, var(--plasma), #7b3dff); transform: translateY(-3px); color: #fff; }
+
+/* scale wheel */
+.wheel { width: 100%; max-width: 330px; aspect-ratio: 1; margin: 0 auto; display: block; }
+
+/* xy pad */
+.xy { position: relative; aspect-ratio: 16/10; max-width: 100%; border-radius: 8px; border: 1px solid var(--line); background: radial-gradient(circle at 30% 70%, rgba(57,243,255,.12), transparent 50%), radial-gradient(circle at 80% 20%, rgba(255,61,242,.14), transparent 50%), var(--void); touch-action: none; cursor: crosshair; overflow: hidden; }
+.xy canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.xy .ax { position: absolute; font-family: var(--f-mono); font-size: 11px; color: var(--dim); pointer-events: none; }
+
+/* knobs */
+.knobs { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.knob { width: 78px; height: 78px; border-radius: 50%; position: relative; cursor: ns-resize; touch-action: none; background: radial-gradient(circle at 35% 30%, #3a3160, #120f20 70%); border: 1px solid var(--line); box-shadow: 0 0 0 4px rgba(57,243,255,.06), 0 8px 24px rgba(0,0,0,.6); }
+.knob::after { content: ""; position: absolute; left: 50%; top: 7px; width: 3px; height: 18px; margin-left: -1.5px; border-radius: 2px; background: var(--uv); box-shadow: 0 0 10px var(--uv); transform-origin: 50% 32px; transform: rotate(var(--r, 0deg)); }
+.knob.end::after { background: var(--plasma); box-shadow: 0 0 10px var(--plasma); }
+.knob-l { font-family: var(--f-mono); font-size: 11px; text-align: center; color: var(--dim); margin-top: 6px; letter-spacing: .1em; }
+
+/* compare */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 15px; }
+th, td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); background: var(--deck); }
+td:first-child { font-family: var(--f-display); font-weight: 600; font-size: 14px; white-space: nowrap; }
+td.usual { color: var(--dim); }
+td.neuro { color: var(--ink); background: linear-gradient(90deg, rgba(255,61,242,.06), transparent); }
+tr:last-child td { border-bottom: 0; }
+.note { color: var(--dim); font-size: 13px; margin-top: 12px; }
+
+/* key chart */
+.bars { display: grid; gap: 14px; }
+.bar-row { display: grid; grid-template-columns: 170px minmax(0,1fr) 64px; gap: 12px; align-items: center; font-size: 14px; }
+.bar-row .lab { color: var(--dim); }
+.track { height: 14px; border-radius: 7px; background: var(--deck-2); overflow: hidden; position: relative; }
+.fill { height: 100%; border-radius: 7px; background: linear-gradient(90deg, #7b3dff, var(--uv)); }
+.fill.best { background: linear-gradient(90deg, var(--plasma), var(--gold)); }
+.bar-row .v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+@media (max-width: 560px) { .bar-row { grid-template-columns: 1fr 52px; } .bar-row .lab { grid-column: 1 / -1; } }
+
+/* numbers */
+.nums { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.num { background: var(--deck); padding: 22px 18px; display: grid; gap: 4px; align-content: start; }
+.num b { font-family: var(--f-display); font-weight: 800; font-size: clamp(24px, 3vw, 36px); line-height: 1; font-variant-numeric: tabular-nums; }
+.num span { color: var(--dim); font-size: 13px; }
+@media (max-width: 900px) { .nums { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+/* cta */
+.cta { text-align: left; display: grid; gap: 18px; }
+.cta .big { font-family: var(--f-display); font-weight: 900; font-size: clamp(30px, 5vw, 64px); line-height: 1; max-width: 16ch; }
+.cta code { font-family: var(--f-mono); font-size: 13px; color: var(--dim); word-break: break-all; }
+.credit { margin-top: 22px; font-family: var(--f-mono); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.credit b { color: var(--gold); font-weight: 600; }
+.fcredit { color: var(--ink); letter-spacing: .12em; text-transform: uppercase; }
+footer { padding-block: 34px; color: var(--dim); font-size: 13px; font-family: var(--f-mono); }
+
+@media (prefers-reduced-motion: reduce) {
+  .glitch::before, .glitch::after, .pillar:hover::after { animation: none; opacity: 0; }
+  html { scroll-behavior: auto; }
+  .tilt { transition: none; }
+}
+</style>
+
+<div class="fx-scan" aria-hidden="true"></div>
+<div class="cursor-glow" id="glow" aria-hidden="true"></div>
+
+<header class="bar">
+  <div class="rail">
+    <div class="logo">NEURO <b>SS</b></div>
+    <nav aria-label="Sections">
+      <a href="#why">Why</a><a href="#engine">Engine</a><a href="#chords">Chords</a><a href="#arp">Arp</a><a href="#scales">Scales</a><a href="#seq">Sequencer</a><a href="#chop">Chop</a><a href="#ears">Ears</a><a href="#class">Its class</a>
+    </nav>
+    <button class="snd" id="snd" aria-pressed="false">♪ Sound off</button>
+  </div>
+</header>
+
+<section class="hero" id="top">
+  <canvas id="heroGL" aria-label="Sixteen glowing 3D pads floating in a plasma field. Click a pad to play a chord."></canvas>
+  <div class="rail">
+    <div class="eyebrow">Neuro Sampler Suite · v1.13 · VST3 / AU / Standalone</div>
+    <h1><span class="glitch" data-t="A sampler">A sampler</span> <span class="grad">that listens.</span></h1>
+    <p class="lede">An MPC-style slice sampler that hears the key, pitch, chords and drums of everything you load, then puts that knowledge to work: in-key chord pads, a theory brain that suggests what comes next, melodic arpeggios, an evolving sequencer and one-sample-accurate chopping. Open source.</p>
+    <div class="hero-ctas">
+      <a class="btn hot" href="https://github.com/TheDude0007/neuro-sampler/releases/latest">Download v1.13</a>
+      <a class="btn" href="#engine">Explore the engine</a>
+    </div>
+    <div class="credit">Developed Independently By <b>Collin Garchar</b></div>
+    <div class="hint" aria-live="polite">These are chord pads in C minor. Click a pad, or press <kbd>1</kbd>–<kbd>8</kbd> · <span class="chordtag" id="heroChord">i · Cm</span></div>
+  </div>
+</section>
+
+<main>
+<section class="band" id="why">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">Why it stands apart</div>
+      <h2>Most samplers play what you load. <span class="grad">This one understands it.</span></h2>
+      <p>Six ideas run through the whole instrument. Each one is measured in the test suite, and most of the tests check rendered audio.</p>
+    </div>
+    <div class="pillars">
+      <article class="pillar tilt"><div class="k">Listening</div><h3>It hears the sample</h3><p>Pitch per slice (YIN, with confidence), key per sample and per slice, <strong>chord names with inversions</strong>, and drum class per hit. A key written in the file name wins, and the closest other keys are offered.</p></article>
+      <article class="pillar tilt"><div class="k">Theory</div><h3>Harmony is built in</h3><p>Chord pads, <strong>Harmonize</strong>, and <strong>Timbre chords</strong> that build each chord from several slices. A theory brain learned from real progressions suggests the next chord and writes progressions into the sequencer.</p></article>
+      <article class="pillar tilt"><div class="k">Generative</div><h3>Controlled randomness</h3><p>Mutation, Phrase Memory, Tonnetz walks and Euclid rhythms are all <strong>seeded</strong>. The same seed always gives the same result, and you get A/B and 64 levels of undo.</p></article>
+      <article class="pillar tilt"><div class="k">Precision</div><h3>One-sample chops</h3><p>Jog wheels on the MPK knobs move slice edges <strong>1 sample per click</strong>. Note Repeat goes down to 1/128 with sample-exact timing, and MIDI clock follows to the sample.</p></article>
+      <article class="pillar tilt"><div class="k">AI, on your machine</div><h3>Stems and kits</h3><p>Demucs splits a full song into Drums, Bass, Vocals and Other, then a second pass adds Lows and Mids. NMF pulls Kick, Snare and Cymbals out of a mixed loop, and you can <strong>teach it your kit</strong>.</p></article>
+      <article class="pillar tilt"><div class="k">Engineering</div><h3>Built to hold up</h3><p>Lock-free audio thread, about 340 automated checks, pluginval strictness 10, and <strong>about 0.4% of one core</strong> at the worst case measured. All 234 controls can be MIDI-mapped, and a test enforces it.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="engine">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">The engine · interactive 3D</div>
+      <h2>Thirteen systems around one core.</h2>
+      <p>Drag to spin the orbit. Click a node to see what that system does.</p>
+    </div>
+    <div class="orbit-wrap">
+      <div class="orbit-stage" id="orbitStage"><canvas id="orbitGL" aria-hidden="true"></canvas></div>
+      <article class="opanel" id="opanel" aria-live="polite"></article>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="chords">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">CHORD tab · v1.9 + theory brain v1.12</div>
+      <h2>Every pad knows the key.</h2>
+      <p>Below is the same harmony logic the plugin uses, running in your browser. Choose a degree, a shape and a voicing to see and hear the chord.</p>
+    </div>
+
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 01</span><h3>Chord lab</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <p>The CHORD tab has three ways to make chords from your slices:</p>
+          <div class="modes">
+            <div class="mode"><b>HARMONIZE</b><span>Every pitched slice plays the song key's chord built on its own note. Drum slices stay single.</span></div>
+            <div class="mode"><b>CHORD PADS</b><span>Pads 1–8 of a bank are the key's chords I–VII plus the octave. Pads 9–16 play the same chords in one richer shape.</span></div>
+            <div class="mode"><b>TIMBRE CHORDS</b><span>Each chord tone comes from a different slice, so a chord can be a vocal, a bass and a pluck at once.</span></div>
+            <div class="mode"><b>RENDER</b><span><em>Keep length</em> stretches each note to the original duration. <em>Resample</em> pitches it like a tape. Strum spreads the notes over time.</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="ctl-label">Degree in C minor</div>
+          <div class="chips" id="degChips"></div>
+          <div class="ctl-label">Shape · 7</div>
+          <div class="chips" id="shapeChips"></div>
+          <div class="ctl-label">Voicing · 3</div>
+          <div class="chips" id="voiceChips"></div>
+          <div class="kbd" id="kbd" aria-hidden="true"></div>
+          <div class="readout" id="chordRead"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 02</span><h3>Theory brain</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <p>A Markov model of chord changes in scale degrees. It is trained on <strong>110 real progressions</strong> (the MIT free-midi-chords set) plus <strong>your own chord library</strong> when it finds one, which never leaves your machine. A functional-harmony prior (V→I, ii→V, IV→V) keeps rare moves sensible.</p>
+          <p><strong>Next:</strong> four buttons suggest the most likely next chords after the one you just played. <strong>Generate:</strong> builds a 4- or 8-chord progression. With a mood selected, it picks a real progression tagged with that mood. With no mood, it takes a smart walk from the tonic that ends on a chord leading home. <strong>→ SEQ</strong> writes the progression into the sequencer. <strong>Chord MIDI out</strong> sends the chords to a synth.</p>
+          <p class="note">Moods: Dark · Dramatic · Empowered · Excited · Hopeful · Joyful · Lonely · Mysterious · Nostalgic · Peaceful · Playful · Rebellious · Relaxed · Romantic · Sad · Spiritual · Tender · Triumphant</p>
+        </div>
+        <div>
+          <div class="ctl-label">Key mode</div>
+          <div class="chips" id="tbMode"></div>
+          <div class="prog" id="prog"></div>
+          <div class="row">
+            <button class="btn hot" id="tbGen">Generate</button>
+            <button class="btn" id="tbPlay">▶ Play</button>
+          </div>
+          <div class="readout" id="tbNext"></div>
+          <p class="note">This demo walks the prior table that ships in the plugin. The plugin also adds the counts it learned from real progressions.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="arp">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">Arpeggiator · 14 directions</div>
+      <h2>Ten classic directions, four melodic ones.</h2>
+      <p>The held chord is Cm7, played in the order E♭, C, B♭, G, with the scale set to C minor. Pick a direction to see its notes on the piano roll.</p>
+    </div>
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 03</span><h3>Arp visualiser</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <div class="modes" id="arpDesc"></div>
+          <p style="margin-top:16px">On top of the direction: 1/1–1/32 with triplets, gate, 1–4 octaves, MPC swing, probability, repeats, latch, retrigger. The <strong>GEN tab</strong> adds a 16-step rhythm with accents and ratchets, Euclid fill, <strong>Arpeggio Grammar</strong> (up to 8 rules you can read and edit, such as "step 4 of every 8: octave jump"), <strong>Phrase Memory</strong> (records a phrase and replays it with seeded variation, returning to the original every C cycles), humanise and a gesture XY pad.</p>
+        </div>
+        <div>
+          <div class="chips" id="arpChips"></div>
+          <canvas class="demo" id="arpCv" height="260"></canvas>
+          <div class="row"><button class="btn hot" id="arpPlay">▶ Play</button><span class="readout" id="arpRead" style="margin:0;flex:1;min-width:0"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="scales">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">Keys mode · Play In · scale snapping</div>
+      <h2>Thirteen scales, one wheel.</h2>
+      <p>Keys mode plays a slice chromatically from its detected root and snaps notes to the scale. Play In moves every musical slice to another key and keeps their length. Click a note on the wheel to hear it.</p>
+    </div>
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 04</span><h3>Scale wheel</h3></div>
+      <div class="mbody">
+        <div>
+          <div class="chips" id="scaleChips"></div>
+          <div class="readout" id="scaleRead"></div>
+          <div class="row"><button class="btn" id="scaleRun">▶ Run the scale</button></div>
+        </div>
+        <div><svg class="wheel" id="wheel" viewBox="0 0 320 320" role="img" aria-label="Twelve-note scale wheel"></svg></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="seq">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">Step sequencer · 16 patterns × 16 lanes</div>
+      <h2>Patterns that evolve, with nothing lost.</h2>
+      <p>Each lane can have its own length (polymeter), and each step its own velocity, gate, probability, ratchet, microtiming and pitch. Trig conditions decide when a step plays. Click a step to toggle it, then Mutate.</p>
+    </div>
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 05</span><h3>Pattern Genome</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <div class="modes">
+            <div class="mode"><b>TRIG CONDITIONS</b><span>Always · A:B (cycle A of every B) · First / not first · Fill / not fill · If previous / if not previous.</span></div>
+            <div class="mode"><b>EVOLVE</b><span>Reverse, shift, ×2, ÷2, expand, contract, velocity curves, probability profiles. Each change is one undo step.</span></div>
+            <div class="mode"><b>GENOME</b><span>A lane becomes genes: rhythm, velocity, pitch, groove, chance, ratchet and gate. Take the groove from pattern 3 and the pitches from pattern 7.</span></div>
+            <div class="mode"><b>MUTATION</b><span>Ticked genes mutate and the rest stay exactly as they were. Set intensity, the % of steps to preserve, a density bias and a seed, then compare A/B.</span></div>
+            <div class="mode"><b>WEAVE</b><span>Accents, fills and pitch can be borrowed from other patterns on top of the playing one.</span></div>
+          </div>
+        </div>
+        <div>
+          <canvas class="demo" id="seqCv" height="230"></canvas>
+          <div class="row">
+            <button class="btn hot" id="seqPlay">▶ Play</button>
+            <button class="btn" id="seqMut">Mutate</button>
+            <button class="btn" id="seqAB">A / B</button>
+          </div>
+          <div class="readout" id="seqRead"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="chop">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">CHOP tab · jog chop v1.11 · Note Repeat</div>
+      <h2>Chop down to the single sample.</h2>
+      <p>Four chop modes (Transients, Grid 4–128, Kit, Manual), magnetic snap to hits, a crosshair, keyboard nudges and 16 Levels. Jog chop maps to the MPK mini's K5 and K6 knobs. Drag the knobs below up or down.</p>
+    </div>
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 06</span><h3>Jog chop</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <p><strong>START</strong> moves the selected slice's start. <strong>END</strong> moves its end and the next slice's start with it. On the first slice, START cuts the head off into a slice of its own. On the last slice, END cuts off the tail.</p>
+          <p>Step size is 1 sample, 0.1 ms, 1 ms or 10 ms per click, or <strong>follow zoom</strong>. While you turn, the waveform zooms to the moving edge. When the knob stops, the slice auditions after 180 ms.</p>
+          <div class="ctl-label">Step</div>
+          <div class="chips" id="jogStep"></div>
+          <div class="knobs">
+            <div><div class="knob" id="kStart" role="slider" tabindex="0" aria-label="Jog start"></div><div class="knob-l">START · K5</div></div>
+            <div><div class="knob end" id="kEnd" role="slider" tabindex="0" aria-label="Jog end"></div><div class="knob-l">END · K6</div></div>
+          </div>
+        </div>
+        <div>
+          <canvas class="demo" id="chopCv" height="150"></canvas>
+          <canvas class="demo" id="zoomCv" height="110" style="margin-top:10px"></canvas>
+          <div class="readout" id="chopRead"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="module">
+      <div class="mhead"><span class="tag">Module 07</span><h3>Note Repeat XY</h3></div>
+      <div class="mbody">
+        <div class="copy">
+          <p>Hold <strong>REPEAT</strong> and play pads to retrigger them at the rate. The rates run from <strong>1 bar down to 1/128</strong>, with triplets. Gate is 1–100%, and a short gate on any sample gives stutter and glitch chops. Swing runs 50–75%, with Latch and Lock.</p>
+          <p>On the <strong>Repeat XY pad</strong>, left to right sets the rate and bottom to top sets the gate. Slide while you play for trap rolls that speed up and for gate sweeps. Hits lock to the host's bar grid, so 1/16 at 120 BPM lands at exactly 0, 6000, 12000 and 18000 samples.</p>
+        </div>
+        <div>
+          <div class="xy" id="xy"><canvas id="xyCv"></canvas><span class="ax" style="left:10px;bottom:8px">1 BAR</span><span class="ax" style="right:10px;bottom:8px">1/128</span><span class="ax" style="left:10px;top:8px">GATE 100%</span></div>
+          <div class="readout" id="xyRead">Hold and drag on the pad</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="ears">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">Key detection · measured</div>
+      <h2>Honest ears.</h2>
+      <p>Key detection on stems and loops is hard, and most of the misses are a fifth or a fourth away from the right key. So the sampler shows how sure it is, offers the closest other keys, and uses the key from the file name when there is one.</p>
+    </div>
+    <div class="module">
+      <div class="mbody">
+        <div class="copy">
+          <p>Benchmarked on <strong>713 labelled loops</strong>. "Exact" means the right key. "Same notes" also counts the relative key (C major vs A minor), which uses the same seven notes.</p>
+          <p>A v1.11 HPCP prototype added spectral peaks, tuning estimation and harmonic voting. It gained a little and is documented in the repo. The change that solved real projects was letting the file name win: <strong>11 of 11</strong> labelled loops got the right key on load.</p>
+          <p>The key menu offers "Use key from file name" plus the runner-up keys, so you can fix any miss in one click.</p>
+        </div>
+        <div>
+          <div class="bars">
+            <div class="bar-row"><span class="lab">Detector · exact</span><div class="track"><div class="fill" style="width:37%"></div></div><span class="v">37.0%</span></div>
+            <div class="bar-row"><span class="lab">Detector · same notes</span><div class="track"><div class="fill" style="width:47.5%"></div></div><span class="v">47.5%</span></div>
+            <div class="bar-row"><span class="lab">HPCP v2 · exact</span><div class="track"><div class="fill" style="width:39.4%"></div></div><span class="v">39.4%</span></div>
+            <div class="bar-row"><span class="lab">HPCP v2 · same notes</span><div class="track"><div class="fill" style="width:50.6%"></div></div><span class="v">50.6%</span></div>
+            <div class="bar-row"><span class="lab">Key from file name</span><div class="track"><div class="fill best" style="width:100%"></div></div><span class="v">11/11</span></div>
+          </div>
+          <p class="note">The file-name result is on the 11 labelled loops a user supplied. The detector rows are on the 713-loop benchmark.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="class">
+  <div class="rail">
+    <div class="sec-head">
+      <div class="eyebrow">In its class</div>
+      <h2>Where it goes past the usual.</h2>
+      <p>The left column is the feature set common to plugin slice samplers. The right column is what Neuro SS adds on top. This compares against the category in general, not against one named product.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Area</th><th>Usual in the class</th><th>Neuro Sampler Suite</th></tr></thead>
+        <tbody>
+          <tr><td>Slicing</td><td class="usual">Transient or grid slicing, 16 pads</td><td class="neuro">128 slices on banks A–H, 4 chop modes, magnetic snap, Kit → pads in MPC order, jog chop down to one sample from hardware knobs</td></tr>
+          <tr><td>Key &amp; pitch</td><td class="usual">A root note you set by hand</td><td class="neuro">Pitch and key per sample and per slice with confidence, chord names with inversions, key from the file name, Play In to any key</td></tr>
+          <tr><td>Chords</td><td class="usual">Chord memory on one sample</td><td class="neuro">Harmonize, in-key chord pads, timbre chords from several slices, 7 shapes × 3 voicings, strum, chord MIDI out</td></tr>
+          <tr><td>Songwriting</td><td class="usual">None</td><td class="neuro">A theory brain trained on real progressions and your own library: next-chord suggestions, 18 moods, → SEQ</td></tr>
+          <tr><td>Arpeggiator</td><td class="usual">Up / down / random</td><td class="neuro">14 directions including scale run, harmonic series, Tonnetz walk and chord tones; grammar rules; Phrase Memory</td></tr>
+          <tr><td>Sequencer</td><td class="usual">16 steps, velocity</td><td class="neuro">16 × 16 with polymeter, trig conditions, Pattern Genome, seeded mutation with A/B, Phrase Weaving, 64 undo levels</td></tr>
+          <tr><td>Drums &amp; AI</td><td class="usual">Drag in one-shots</td><td class="neuro">Drum classes per hit, Loop Deconstructor, NMF separation you can teach, Demucs stems in-process, 12 outputs by class</td></tr>
+          <tr><td>Library</td><td class="usual">A file browser</td><td class="neuro">Folders indexed in place (51k files in 2.7 s), 18 types, BPM and key from names, Auto kit, Kit → pads as a real WAV kit</td></tr>
+          <tr><td>Hardware</td><td class="usual">MIDI learn on some controls</td><td class="neuro">All 234 controls mappable (enforced by test), MPK mini mk2 template, MIDI clock in and out, GW-1 and FLUX NEXUS link</td></tr>
+          <tr><td>Openness</td><td class="usual">Closed source</td><td class="neuro">AGPL-3.0. Samples stay in your folders and nothing gets uploaded</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="rail">
+    <div class="nums">
+      <div class="num"><b data-count="128">128</b><span>pads, banks A–H</span></div>
+      <div class="num"><b data-count="234">234</b><span>MIDI-mappable controls</span></div>
+      <div class="num"><b>~340</b><span>automated checks</span></div>
+      <div class="num"><b>0.4%</b><span>of one core, worst case</span></div>
+      <div class="num"><b>2.7 s</b><span>to index 51k samples</span></div>
+      <div class="num"><b data-count="14">14</b><span>arp directions</span></div>
+      <div class="num"><b data-count="13">13</b><span>scales</span></div>
+      <div class="num"><b data-count="32">32</b><span>voices</span></div>
+      <div class="num"><b>×0.25–4</b><span>stretch, pitch kept</span></div>
+      <div class="num"><b>10</b><span>pluginval strictness</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="rail cta">
+    <div class="eyebrow">Free and open source · macOS Apple Silicon</div>
+    <div class="big">Load a loop. <span class="grad">Hear what it knows.</span></div>
+    <div class="hero-ctas" style="margin-top:0">
+      <a class="btn hot" href="https://github.com/TheDude0007/neuro-sampler/releases/latest">Download v1.13</a>
+      <a class="btn" href="https://github.com/TheDude0007/neuro-sampler">Source on GitHub</a>
+    </div>
+    <code>https://github.com/TheDude0007/neuro-sampler/releases/latest</code>
+  </div>
+</section>
+</main>
+
+<footer><div class="rail"><span class="fcredit">Developed Independently By Collin Garchar</span><br>Neuro Sampler Suite · AGPL-3.0 · JUCE 9 · VST3 / AU / Standalone · builds are not notarized yet, see the README to install</div></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = s => document.querySelector(s);
+
+/* ---------------- audio ---------------- */
+let ac = null, master = null, soundOn = false;
+const sndBtn = $('#snd');
+function audio() {
+  if (!ac) {
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createGain(); master.gain.value = .55;
+      const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+    } catch (e) { return null; }
+  }
+  if (ac.state === 'suspended') ac.resume();
+  return ac;
+}
+function setSound(on) { soundOn = on; sndBtn.setAttribute('aria-pressed', on); sndBtn.textContent = on ? '♪ Sound on' : '♪ Sound off'; if (on) audio(); }
+sndBtn.addEventListener('click', () => setSound(!soundOn));
+const ensure = () => { if (!soundOn) setSound(true); return audio(); };
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+function tone(m, when = 0, dur = .6, vel = .7) {
+  if (!soundOn || !audio()) return;
+  const t = ac.currentTime + when + .005;
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+  o1.type = 'sawtooth'; o2.type = 'square';
+  o1.frequency.value = mtof(m); o2.frequency.value = mtof(m) * 1.004;
+  f.type = 'lowpass'; f.Q.value = 6;
+  f.frequency.setValueAtTime(600 + vel * 3600, t); f.frequency.exponentialRampToValueAtTime(380, t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.09 * vel, t + .008); g.gain.exponentialRampToValueAtTime(.0005, t + dur);
+  o1.connect(f); o2.connect(f); f.connect(g); g.connect(master);
+  o1.start(t); o2.start(t); o1.stop(t + dur + .05); o2.stop(t + dur + .05);
+}
+let noiseBuf = null;
+function noise() { if (!noiseBuf) { noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const s = ac.createBufferSource(); s.buffer = noiseBuf; return s; }
+function drum(kind, when = 0, vel = 1, gate = 1) {
+  if (!soundOn || !audio()) return;
+  const t = ac.currentTime + when + .005, g = ac.createGain(); g.connect(master);
+  if (kind === 'kick') {
+    const o = ac.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + .14);
+    g.gain.setValueAtTime(.9 * vel, t); g.gain.exponentialRampToValueAtTime(.001, t + .38 * gate); o.connect(g); o.start(t); o.stop(t + .4);
+  } else {
+    const n = noise(), f = ac.createBiquadFilter();
+    f.type = kind === 'hat' ? 'highpass' : 'bandpass'; f.frequency.value = kind === 'hat' ? 7000 : kind === 'clap' ? 1400 : 1900; f.Q.value = .8;
+    const len = (kind === 'hat' ? .05 : .2) * gate + .01;
+    g.gain.setValueAtTime((kind === 'hat' ? .35 : .6) * vel, t); g.gain.exponentialRampToValueAtTime(.001, t + len);
+    n.connect(f); f.connect(g); n.start(t); n.stop(t + len + .02);
+    if (kind === 'snare') { const o = ac.createOscillator(), g2 = ac.createGain(); o.frequency.value = 190; g2.gain.setValueAtTime(.35 * vel, t); g2.gain.exponentialRampToValueAtTime(.001, t + .1); o.connect(g2); g2.connect(master); o.start(t); o.stop(t + .12); }
+  }
+}
+
+/* ---------------- theory ---------------- */
+const MAJ = [0, 2, 4, 5, 7, 9, 11], MIN = [0, 2, 3, 5, 7, 8, 10];
+const NN = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const numMaj = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'], numMin = ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII'];
+const SHAPES = { triad: [0, 2, 4], '7th': [0, 2, 4, 6], '9th': [0, 2, 4, 6, 8], sus2: [0, 1, 4], sus4: [0, 3, 4], power: [0, 4, 7], '7sus4': [0, 3, 4, 6] };
+function scaleNote(i, minor, root = 60) { const sc = minor ? MIN : MAJ; return root + 12 * Math.floor(i / 7) + sc[((i % 7) + 7) % 7]; }
+function chordNotes(deg, shape, voicing, minor) {
+  let n = SHAPES[shape].map(o => scaleNote(deg + o, minor)).sort((a, b) => a - b);
+  if (voicing === 'drop 2' && n.length >= 3) { const i = n.length - 2; n[i] -= 12; n.sort((a, b) => a - b); }
+  if (voicing === 'wide') { n = n.map((x, i) => i === 0 ? x - 12 : i % 2 === 0 ? x + 12 : x).sort((a, b) => a - b); }
+  return n;
+}
+function chordName(notes, deg, minor) {
+  const r = scaleNote(deg, minor) % 12, third = (scaleNote(deg + 2, minor) - scaleNote(deg, minor) + 12) % 12, fifth = (scaleNote(deg + 4, minor) - scaleNote(deg, minor) + 12) % 12;
+  return NN[r] + (fifth === 6 ? 'dim' : third === 3 ? 'm' : '');
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ---------------- hero WebGL ---------------- */
+let pulseCol = [1, .24, .95];
+const hero = { pulse: 0, mx: 0, my: 0, hit: null };
+function heroChord(i) {
+  const deg = i % 8, rich = i >= 8, minor = true;
+  const d = deg === 7 ? 7 : deg;
+  const notes = chordNotes(d, rich ? '7th' : 'triad', 'close', minor).map(n => n - 12);
+  ensure();
+  notes.forEach((n, k) => tone(n, k * .018, 1.1, .75));
+  const label = (deg === 7 ? 'i (8va)' : numMin[deg]) + ' · ' + chordName(notes, d % 7, minor) + (rich ? '7' : '');
+  $('#heroChord').textContent = label;
+  hero.hit && hero.hit(i);
+}
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea')) return;
+  const k = parseInt(e.key, 10); if (k >= 1 && k <= 8) heroChord(k - 1);
+});
+
+function initHero() {
+  if (!window.THREE) return;
+  const cv = $('#heroGL');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false }); } catch (e) { return; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.autoClear = false;
+  const bgScene = new THREE.Scene(), bgCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const uni = { t: { value: 0 }, res: { value: new THREE.Vector2(1, 1) }, m: { value: new THREE.Vector2() }, pulse: { value: 0 }, pc: { value: new THREE.Vector3(1, .2, .9) } };
+  bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: uni, depthWrite: false,
+    vertexShader: 'void main(){gl_Position=vec4(position,1.);}',
+    fragmentShader: `precision highp float;uniform float t;uniform vec2 res;uniform vec2 m;uniform float pulse;uniform vec3 pc;
+      float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+      float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+      float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<5;i++){v+=a*n(p);p=p*2.03+vec2(1.7,9.2);a*=.5;}return v;}
+      vec3 pal(float x){return .5+.5*cos(6.2831*(x+vec3(.0,.33,.67)));}
+      void main(){vec2 uv=(gl_FragCoord.xy-.5*res)/res.y;
+        vec2 q=vec2(fbm(uv*1.5+t*.05),fbm(uv*1.5-t*.04+3.1));
+        vec2 r=vec2(fbm(uv*2.+q*2.2+m*.5+t*.07),fbm(uv*2.+q*2.2-t*.06+7.));
+        float f=fbm(uv*1.7+r*2.5);
+        float d=length(uv-m*.6);
+        float ring=sin(d*38.-t*7.)*exp(-d*2.6)*pulse;
+        vec3 c=pal(f*1.5+t*.025+r.x*.7+ring*.25);
+        c*=vec3(.95,.55,1.05);
+        float mask=smoothstep(.3,1.,f);
+        c=mix(vec3(.03,.01,.06),c,mask*.62+ring*.35);
+        c+=pc*pulse*exp(-d*3.5)*.5;
+        float sl=.92+.08*sin(gl_FragCoord.y*1.6);
+        c*=sl*(1.-.42*length(uv*vec2(.8,1.)));
+        gl_FragColor=vec4(c,1.);}`
+  })));
+
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(42, 1, .1, 100); cam.position.set(0, 0, 10);
+  scene.add(new THREE.AmbientLight(0x6040a0, .55));
+  const l1 = new THREE.PointLight(0xff3df2, 2.2, 30); l1.position.set(-4, 4, 6); scene.add(l1);
+  const l2 = new THREE.PointLight(0x39f3ff, 2.0, 30); l2.position.set(5, -3, 6); scene.add(l2);
+
+  const rig = new THREE.Group(); scene.add(rig);
+  const padGroup = new THREE.Group(); rig.add(padGroup);
+  const pads = [];
+  const padGeo = new THREE.BoxGeometry(.92, .92, .26);
+  const colors = [0xff3df2, 0xc04dff, 0x7b5cff, 0x39b6ff, 0x39f3ff, 0x5dffc8, 0x9dff6a, 0xffd23d];
+  for (let i = 0; i < 16; i++) {
+    const col = colors[i % 8];
+    const mat = new THREE.MeshStandardMaterial({ color: 0x1b1530, emissive: col, emissiveIntensity: .18, metalness: .35, roughness: .3 });
+    const m = new THREE.Mesh(padGeo, mat);
+    const cx = i % 4, ry = Math.floor(i / 4);
+    m.position.set((cx - 1.5) * 1.08, (ry - 1.5) * 1.08, 0); // pad 1 bottom-left, MPC style
+    m.userData = { i, glow: 0, col: new THREE.Color(col) };
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(padGeo), new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: .55 }));
+    m.add(edge);
+    padGroup.add(m); pads.push(m);
+  }
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.7, 4.7, .18), new THREE.MeshStandardMaterial({ color: 0x0d0a18, metalness: .7, roughness: .4 }));
+  base.position.z = -.24; padGroup.add(base);
+
+  // waveform particle ring
+  const N = 1400, pos = new Float32Array(N * 3), seeds = new Float32Array(N);
+  for (let i = 0; i < N; i++) seeds[i] = Math.random();
+  const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(pgeo, new THREE.PointsMaterial({ size: .045, color: 0x9de9ff, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false }));
+  rig.add(pts);
+
+  hero.hit = i => {
+    const p = pads[i]; p.userData.glow = 1;
+    uni.pulse.value = 1; uni.pc.value.set(p.userData.col.r, p.userData.col.g, p.userData.col.b);
+  };
+
+  const ray = new THREE.Raycaster(), mv = new THREE.Vector2();
+  let hover = -1;
+  function pick(e) {
+    const r = cv.getBoundingClientRect();
+    mv.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(mv, cam);
+    const h = ray.intersectObjects(pads, false)[0];
+    return h ? h.object.userData.i : -1;
+  }
+  const heroEl = $('.hero');
+  heroEl.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect();
+    hero.mx = ((e.clientX - r.left) / r.width) * 2 - 1; hero.my = -(((e.clientY - r.top) / r.height) * 2 - 1);
+    hover = pick(e); heroEl.style.cursor = hover >= 0 ? 'pointer' : '';
+  });
+  heroEl.addEventListener('pointerdown', e => { if (e.target.closest('a,button')) return; const i = pick(e); if (i >= 0) heroChord(i); });
+
+  let narrow = false;
+  function size() {
+    const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+    uni.res.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+    narrow = w / h < 1.05;
+    rig.position.set(narrow ? 0 : 3.1, narrow ? -2.6 : -.1, 0);
+    rig.scale.setScalar(narrow ? .62 : 1);
+  }
+  new ResizeObserver(size).observe(cv); size();
+
+  let visible = true;
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(cv);
+  const t0 = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!visible) return;
+    const t = RM ? 8 : (now - t0) / 1000;
+    uni.t.value = t; uni.m.value.set(hero.mx, hero.my);
+    uni.pulse.value *= .955;
+    padGroup.rotation.x = -.55 + hero.my * .12 + (RM ? 0 : Math.sin(t * .5) * .05);
+    padGroup.rotation.y = -.35 + hero.mx * .22 + (RM ? 0 : Math.sin(t * .35) * .06);
+    padGroup.position.y = RM ? 0 : Math.sin(t * .8) * .08;
+    pads.forEach(p => {
+      const u = p.userData; u.glow *= .93;
+      const hv = u.i === hover ? .25 : 0;
+      p.material.emissiveIntensity = .18 + hv + u.glow * 1.6 + (RM ? 0 : .06 * Math.sin(t * 2 + u.i * .7));
+      p.position.z = -u.glow * .16;
+    });
+    // particles: a looping waveform wrapped around the pads
+    const amp = .35 + uni.pulse.value * .9;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 + t * .12, s = seeds[i];
+      const env = Math.pow(Math.abs(Math.sin(a * 4 + 1.3)), 6);
+      const w = Math.sin(a * 60 + t * 3) * env * amp + (s - .5) * .08;
+      const R = 3.25 + w * .5;
+      pos[i * 3] = Math.cos(a) * R; pos[i * 3 + 1] = Math.sin(a) * R * .98; pos[i * 3 + 2] = w * .6 + (s - .5) * .25 - .2;
+    }
+    pgeo.attributes.position.needsUpdate = true;
+    pts.rotation.copy(padGroup.rotation);
+    renderer.clear(); renderer.render(bgScene, bgCam); renderer.clearDepth(); renderer.render(scene, cam);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- orbit ---------------- */
+const SYSTEMS = [
+  ['Sample library', 'Your own folders, indexed where they are. Nothing is copied or uploaded.', ['18 sample types read from names and folders (kick, kwkik, kd, open hihat, percloop…)', 'BPM and key read from file names, including "f sharp major"', 'Search plus type and pack filters, preview, then Load', 'Auto kit: 16 slots in MPC order from one pack; Kit → pads writes a 48 kHz WAV kit with slices'], ['51k files · 2.7 s', '18 types', '16-slot kits']],
+  ['Chop', 'MPC-style chopping, with one-sample precision when you need it.', ['Transients, Grid 4–128, Kit (drums recognised and laid out in MPC order) and Manual', 'Magnetic snap to hits, crosshair, Delete and arrow-key nudges (Shift = 1 sample)', '16 Levels: one slice across 16 pads by velocity or tune', 'Jog chop on MPK K5 / K6, auditions when the knob stops'], ['1-sample jog', '4 modes', '64-sample min slice']],
+  ['Ears', 'Analysis that reports how sure it is.', ['YIN pitch per slice and per sample, with confidence and a polyphony check', 'Key per sample and per slice from chroma with overtone subtraction', 'Chord names per slice: 16 types, with inversions', 'Song key set on load; the file-name key wins; runner-up keys one click away'], ['16 chord types', '11/11 key from names']],
+  ['Pads', '128 pads, deep enough for any kit.', ['Banks A–H, slice-by-id or custom assignment', 'Layering, choke groups, level, tune, velocity sensitivity', 'Names, colours, copy, paste and duplicate', 'MIDI note learn; hardware pads follow the bank'], ['128 pads', '32 voices', '12 outputs']],
+  ['Chords', 'The key, played from your slices.', ['Harmonize: each pitched slice plays its in-key chord', 'Chord pads: I–VII + octave on pads 1–8, a richer shape on 9–16', 'Timbre chords: each tone comes from a different slice', 'Triad, 7th, 9th, sus2, sus4, power, 7sus4 · Close, Drop 2, Wide · strum'], ['7 shapes', '3 voicings']],
+  ['Theory brain', 'Learns which chord comes next.', ['Markov table learned from 110 MIT progressions, plus your chord library', 'A functional-harmony prior fills gaps (V→I, ii→V, IV→V)', 'Next: the four most likely chords after the last one you played', 'Generate by mood, write it to SEQ, or send chord MIDI out to a synth'], ['18 moods', '4 or 8 chords']],
+  ['Arpeggiator', 'From classic patterns to melodic ones.', ['Up, down, up-down, down-up, as played, reversed, random, random with no repeats, chord, octave cycle', 'Scale run, harmonic series, Tonnetz walk, chord tones', 'Grammar rules, Phrase Memory, Euclid, ratchets, accents', 'Locked to the host or free-running, with no stuck notes'], ['14 directions', '8 grammar rules']],
+  ['Sequencer', 'Patterns that grow without losing anything.', ['16 patterns × 16 lanes, per-lane length (polymeter)', 'Per step: velocity, gate, probability, ratchet, microtiming, pitch', 'Trig conditions, Evolve transforms, Pattern Genome recombination', 'Seeded mutation with A/B, Phrase Weaving, 64 undo levels'], ['16 × 16', 'deterministic']],
+  ['Note Repeat', 'The MPC finger-drumming move, extended.', ['1 bar → 1/128 including triplets', 'Gate 1–100% for stutter and glitch', 'Swing 50–75%, latch, lock', 'Repeat XY pad: rate across, gate up'], ['1/128', 'sample-exact']],
+  ['Kit intelligence', 'It knows a kick from a snare.', ['Sound fingerprints and drum classes with a timbre map', 'Timbre-addressed sequencing re-orchestrates patterns on any kit', 'Loop Deconstructor: one lane per drum, groove kept', 'NMF separates a mixed loop, and you can teach it your kit; Chord-Lock'], ['12 class outputs']],
+  ['AI stems', 'Source separation inside the plugin.', ['Extract drums: full song → drum stem (Demucs)', 'Split stems: Drums, Bass, Vocals, Other', 'Layer 2: Vocals, Drums, Lows, Mids', 'The song key is read from the stems after a split'], ['in-process', 'no cloud']],
+  ['Time & pitch', 'Stretch and transpose without losing the feel.', ['Signalsmith stretch ×0.25–×4 with pitch kept, transients preserved', 'Per slice ±24 st, resample or keep length', 'Play In: move every musical slice to a new key', 'Pitch LFO (5 shapes, tempo sync), bend up to 24 st'], ['×0.25–×4', '±24 st']],
+  ['Rig link', 'Works with your hardware and other plugins.', ['234 controls MIDI-mappable, measured MPK mini mk2 template', 'MIDI clock in and out, follows Song Position sample-accurately', 'Lanes drive the GW-1 synth; FLUX NEXUS shares the clock', 'Virtual MIDI port "Neuro Sampler Suite"'], ['234 mappings', 'clock in/out']]
+];
+let orbitSel = 0;
+function showSystem(i) {
+  orbitSel = i;
+  const [name, lead, items, stats] = SYSTEMS[i];
+  $('#opanel').innerHTML = `<div class="idx">SYSTEM ${String(i + 1).padStart(2, '0')} / ${SYSTEMS.length}</div><h3>${name}</h3><p>${lead}</p><ul>${items.map(x => `<li>${x}</li>`).join('')}</ul><div class="stats">${stats.map(s => `<span class="stat">${s}</span>`).join('')}</div>`;
+  document.querySelectorAll('.olabel').forEach((b, k) => b.classList.toggle('on', k === i));
+}
+function initOrbit() {
+  const stage = $('#orbitStage');
+  const labels = SYSTEMS.map((s, i) => { const b = document.createElement('button'); b.className = 'olabel'; b.textContent = s[0]; b.addEventListener('click', () => showSystem(i)); stage.appendChild(b); return b; });
+  showSystem(0);
+  if (!window.THREE) { labels.forEach((b, i) => { const a = i / labels.length * Math.PI * 2; b.style.left = 50 + Math.cos(a) * 38 + '%'; b.style.top = 50 + Math.sin(a) * 38 + '%'; }); return; }
+  const cv = $('#orbitGL');
+  let renderer; try { renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); } catch (e) { return; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(45, 1, .1, 100);
+  cam.position.set(0, 3.6, 10.5); cam.lookAt(0, 0, 0);
+  scene.add(new THREE.AmbientLight(0x5040a0, .7));
+  const pl = new THREE.PointLight(0xff3df2, 3, 20); scene.add(pl);
+  const pl2 = new THREE.PointLight(0x39f3ff, 1.6, 30); pl2.position.set(0, 6, 4); scene.add(pl2);
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 2), new THREE.MeshStandardMaterial({ color: 0x2a0d3d, emissive: 0xff3df2, emissiveIntensity: .5, wireframe: true }));
+  const coreIn = new THREE.Mesh(new THREE.SphereGeometry(.75, 32, 32), new THREE.MeshStandardMaterial({ color: 0x120820, emissive: 0x7b3dff, emissiveIntensity: .9, roughness: .2 }));
+  scene.add(core, coreIn);
+  const ring = new THREE.Group(); scene.add(ring);
+  const R = 4.2;
+  const ringLine = new THREE.Mesh(new THREE.TorusGeometry(R, .012, 6, 160), new THREE.MeshBasicMaterial({ color: 0x5a4a9a })); ringLine.rotation.x = Math.PI / 2; ring.add(ringLine);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.3, .008, 6, 120), new THREE.MeshBasicMaterial({ color: 0x39f3ff, transparent: true, opacity: .4 })); ring2.rotation.x = Math.PI / 2.3; scene.add(ring2);
+  const nodes = SYSTEMS.map((s, i) => {
+    const a = i / SYSTEMS.length * Math.PI * 2;
+    const hue = i / SYSTEMS.length;
+    const col = new THREE.Color().setHSL(.78 + hue * .45 % 1, .95, .6);
+    const m = new THREE.Mesh(new THREE.OctahedronGeometry(.3, 0), new THREE.MeshStandardMaterial({ color: 0x150f25, emissive: col, emissiveIntensity: .7, metalness: .5, roughness: .25 }));
+    m.position.set(Math.cos(a) * R, Math.sin(a * 3) * .25, Math.sin(a) * R);
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), m.position.clone()]);
+    const beam = new THREE.Line(beamGeo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: .18 }));
+    ring.add(m, beam); m.userData = { beam, col }; return m;
+  });
+  // streaming particles along beams
+  const SP = 260, spos = new Float32Array(SP * 3), sdata = [];
+  for (let i = 0; i < SP; i++) sdata.push({ n: i % SYSTEMS.length, p: Math.random() });
+  const sgeo = new THREE.BufferGeometry(); sgeo.setAttribute('position', new THREE.BufferAttribute(spos, 3));
+  ring.add(new THREE.Points(sgeo, new THREE.PointsMaterial({ size: .06, color: 0xffd23d, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })));
+
+  let rotY = 0, vel = RM ? 0 : .0025, drag = null;
+  stage.addEventListener('pointerdown', e => { if (e.target.closest('.olabel')) return; drag = { x: e.clientX, r: rotY }; stage.setPointerCapture(e.pointerId); });
+  stage.addEventListener('pointermove', e => { if (drag) rotY = drag.r + (e.clientX - drag.x) * .008; });
+  stage.addEventListener('pointerup', () => { drag = null; });
+  function size() { const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.position.z = w / h < .9 ? 14 : 10.5; cam.updateProjectionMatrix(); }
+  new ResizeObserver(size).observe(stage); size();
+  let visible = true; new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(stage);
+  const v = new THREE.Vector3(), t0 = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!visible) return;
+    const t = (now - t0) / 1000;
+    if (!drag) rotY += vel;
+    ring.rotation.y = rotY;
+    core.rotation.y = t * .3; core.rotation.x = t * .17;
+    const s = 1 + (RM ? 0 : Math.sin(t * 2.2) * .05); coreIn.scale.setScalar(s);
+    ring2.rotation.z = t * .2;
+    const w = stage.clientWidth, h = stage.clientHeight;
+    nodes.forEach((m, i) => {
+      const on = i === orbitSel;
+      m.rotation.y = t * (on ? 2 : .6); m.rotation.x = t * .4;
+      m.scale.setScalar(on ? 1.7 : 1);
+      m.material.emissiveIntensity = on ? 1.8 : .6;
+      m.userData.beam.material.opacity = on ? .85 : .16;
+      m.getWorldPosition(v); const depth = v.z; v.project(cam);
+      const L = labels[i];
+      L.style.left = ((v.x * .5 + .5) * w) + 'px'; L.style.top = ((-v.y * .5 + .5) * h - 26) + 'px';
+      const near = (depth + R) / (2 * R);
+      L.style.opacity = (.35 + near * .65).toFixed(2); L.style.zIndex = Math.round(near * 10) + 1;
+    });
+    for (let i = 0; i < SP; i++) {
+      const d = sdata[i]; d.p += .004 + (d.n === orbitSel ? .008 : 0); if (d.p > 1) d.p -= 1;
+      const np = nodes[d.n].position; spos[i * 3] = np.x * d.p; spos[i * 3 + 1] = np.y * d.p; spos[i * 3 + 2] = np.z * d.p;
+    }
+    sgeo.attributes.position.needsUpdate = true;
+    renderer.render(scene, cam);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- chord lab ---------------- */
+function chipRow(el, items, onPick, sel = 0) {
+  el.innerHTML = '';
+  const btns = items.map((label, i) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = label; b.setAttribute('aria-pressed', i === sel); b.addEventListener('click', () => { btns.forEach(x => x.setAttribute('aria-pressed', x === b)); onPick(i); }); el.appendChild(b); return b; });
+  return btns;
+}
+function buildKbd(el, lo, hi) {
+  el.innerHTML = '';
+  const whites = []; for (let m = lo; m <= hi; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
+  const ww = 100 / whites.length, keys = {};
+  whites.forEach((m, i) => { const d = document.createElement('div'); d.className = 'w'; d.style.left = i * ww + '%'; d.style.width = ww + '%'; el.appendChild(d); keys[m] = d; });
+  for (let m = lo; m <= hi; m++) if ([1, 3, 6, 8, 10].includes(m % 12)) { const i = whites.indexOf(m - 1); const d = document.createElement('div'); d.className = 'b'; d.style.left = ((i + 1) * ww - ww * .3) + '%'; d.style.width = ww * .6 + '%'; el.appendChild(d); keys[m] = d; }
+  return keys;
+}
+function initChordLab() {
+  const keys = buildKbd($('#kbd'), 36, 86);
+  const st = { deg: 0, shape: 'triad', voicing: 'close' };
+  const shapes = Object.keys(SHAPES), voicings = ['close', 'drop 2', 'wide'];
+  function render(play) {
+    const notes = chordNotes(st.deg, st.shape, st.voicing, true);
+    Object.values(keys).forEach(k => k.classList.remove('on', 'root'));
+    const root = scaleNote(st.deg, true);
+    notes.forEach(n => { const k = keys[n]; if (k) k.classList.add('on', ...(n % 12 === root % 12 ? ['root'] : [])); });
+    const sym = { triad: '', '7th': '7', '9th': '9', sus2: 'sus2', sus4: 'sus4', power: '5', '7sus4': '7sus4' }[st.shape];
+    const base = st.shape.startsWith('sus') || st.shape === 'power' || st.shape === '7sus4' ? NN[root % 12] : chordName(notes, st.deg, true);
+    $('#chordRead').innerHTML = `<em>${numMin[st.deg]}</em> · ${base}${sym} · ${st.voicing} · notes ${notes.map(n => NN[n % 12] + (Math.floor(n / 12) - 1)).join(' ')}`;
+    if (play) { ensure(); notes.forEach((n, i) => tone(n, i * .03, 1.2, .7)); }
+  }
+  chipRow($('#degChips'), numMin, i => { st.deg = i; render(true); });
+  chipRow($('#shapeChips'), shapes, i => { st.shape = shapes[i]; render(true); });
+  chipRow($('#voiceChips'), voicings, i => { st.voicing = voicings[i]; render(true); });
+  render(false);
+}
+
+/* ---------------- theory brain ---------------- */
+const PRIOR = {
+  maj: [[0, .8, .4, 1.6, 1.6, 1.2, .2], [.3, 0, .2, .4, 2, .3, .3], [.3, .2, 0, .8, .3, 1.4, .1], [1.2, .6, .2, 0, 1.6, .4, .3], [2.2, .2, .2, .6, 0, 1, .1], [.5, .8, .3, 1.6, .8, 0, .1], [2, .1, .4, .1, .3, .3, 0]],
+  min: [[0, .3, .9, 1.4, .9, 1.4, 1.2], [.3, 0, .2, .3, 1.8, .3, .3], [.6, .1, 0, .8, .3, 1, 1.2], [1.2, .3, .3, 0, 1.4, .8, .8], [2, .1, .3, .6, 0, .9, .4], [.6, .4, 1, 1, .6, 0, 1.4], [1.6, .1, 1.2, .4, .4, .6, 0]]
+};
+function nextP(minor, from) { const row = PRIOR[minor ? 'min' : 'maj'][from]; const tot = row.reduce((a, b) => a + b, 0); return row.map(v => v / tot); }
+function pickW(w, r) { const tot = w.reduce((a, b) => a + b, 0); let x = r() * tot; for (let i = 0; i < w.length; i++) { x -= w[i]; if (x <= 0) return i; } return w.length - 1; }
+function initBrain() {
+  let minor = true, seed = 7, prog = [];
+  chipRow($('#tbMode'), ['minor', 'major'], i => { minor = i === 0; gen(); });
+  const cells = $('#prog');
+  function gen() {
+    const r = mulberry(seed++);
+    prog = [0];
+    while (prog.length < 8) {
+      const last = prog.length === 7, b = prog[prog.length - 1];
+      if (last) { const w = [0]; for (let d = 1; d < 7; d++) w.push(d === b ? 0 : nextP(minor, d)[0] * nextP(minor, b)[d]); prog.push(pickW(w, r)); }
+      else prog.push(pickW(nextP(minor, b), r));
+    }
+    const nm = minor ? numMin : numMaj;
+    cells.innerHTML = prog.map(d => `<div class="pcell">${nm[d]}</div>`).join('');
+    const sug = nextP(minor, prog[7]).map((p, d) => [d, p]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    $('#tbNext').innerHTML = `Next after <em>${nm[prog[7]]}</em>: ` + sug.map(([d, p]) => `${nm[d]} <em>${Math.round(p * 100)}%</em>`).join(' · ');
+  }
+  let playing = null;
+  $('#tbGen').addEventListener('click', () => { gen(); });
+  $('#tbPlay').addEventListener('click', () => {
+    ensure(); clearTimeout(playing);
+    const els = [...cells.children]; let i = 0;
+    const step = () => {
+      els.forEach(e => e.classList.remove('lit'));
+      if (i >= prog.length) return;
+      els[i].classList.add('lit');
+      const notes = chordNotes(prog[i], '7th', 'drop 2', minor);
+      notes.forEach((n, k) => tone(n - 12, k * .02, .85, .65)); tone(scaleNote(prog[i], minor) - 24, 0, .85, .8);
+      i++; playing = setTimeout(step, 620);
+    };
+    step();
+  });
+  gen();
+}
+
+/* ---------------- arpeggiator ---------------- */
+const ARP = [
+  ['Up', 'Low to high, then repeat.'], ['Down', 'High to low.'], ['Up-Down', 'Up then down; the end notes are not repeated.'], ['Down-Up', 'Down then up.'],
+  ['As played', 'The order you pressed the keys.'], ['Reversed', 'The order you pressed them, backwards.'], ['Random', 'A seeded random choice each step.'], ['Random, no repeat', 'Every held note once per cycle, in a new seeded order.'],
+  ['Chord', 'All held notes together on every step.'], ['Octave cycle', 'Climbs the chord, then repeats it an octave up.'],
+  ['Scale run', 'NEW · Walks the song scale up from the lowest held note.'], ['Harmonic series', 'NEW · The natural overtones of the lowest note, snapped into the scale.'],
+  ['Tonnetz walk', 'NEW · Wanders by thirds and fifths, which are the Tonnetz neighbours, inside the scale. Seeded.'], ['Chord tones', 'NEW · Each held note becomes its in-key triad, and the tones climb.']
+];
+function arpSeq(dir) {
+  const played = [63, 60, 70, 67], up = [...played].sort((a, b) => a - b), sc = MIN;
+  const inS = n => sc.includes(((n % 12) + 12) % 12);
+  const snapUp = n => { while (!inS(n)) n++; return n; };
+  const step = (n, k) => { let s = n; for (let i = 0; i < Math.abs(k); i++) { s += Math.sign(k); while (!inS(s)) s += Math.sign(k); } return s; };
+  const r = mulberry(11);
+  let out = [];
+  switch (dir) {
+    case 0: out = up; break;
+    case 1: out = [...up].reverse(); break;
+    case 2: out = [...up, ...up.slice(1, -1).reverse()]; break;
+    case 3: { const d = [...up].reverse(); out = [...d, ...d.slice(1, -1).reverse()]; break; }
+    case 4: out = played; break;
+    case 5: out = [...played].reverse(); break;
+    case 6: for (let i = 0; i < 16; i++) out.push(up[Math.floor(r() * 4)]); break;
+    case 7: for (let c = 0; c < 4; c++) { const s = [...up]; for (let i = 3; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } if (out.length && s[0] === out[out.length - 1]) s.push(s.shift()); out.push(...s); } break;
+    case 8: out = [up]; break;
+    case 9: out = [...up, ...up.map(n => n + 12)]; break;
+    case 10: for (let n = snapUp(60); n <= 72; n = step(n, 1)) out.push(n); break;
+    case 11: out = [0, 12, 19, 24, 28, 31].map(p => inS(60 + p) ? 60 + p : snapUp(60 + p)); break;
+    case 12: { const mv = [3, 4, 7, -3, -4, -7, 5, -5]; let n = 60; for (let s = 0; s < 16; s++) { out.push(n); for (let tries = 0; tries < 8; tries++) { const c = n + mv[Math.floor(r() * mv.length)]; if (c >= 55 && c <= 72 && inS(c)) { n = c; break; } } } break; }
+    case 13: { const t = new Set(); up.forEach(n => { const rt = snapUp(n); [rt, step(rt, 2), step(rt, 4)].forEach(x => t.add(x)); }); out = [...t].sort((a, b) => a - b); break; }
+  }
+  const seq = []; while (seq.length < 16) seq.push(out[seq.length % out.length]);
+  return seq.map(x => Array.isArray(x) ? x : [x]);
+}
+function initArp() {
+  const cv = $('#arpCv'), ctx = cv.getContext('2d');
+  let dir = 0, seq = arpSeq(0), head = -1, timer = null;
+  const desc = $('#arpDesc');
+  function describe() {
+    desc.innerHTML = `<div class="mode"><b>${ARP[dir][0].toUpperCase()}</b><span>${ARP[dir][1]}</span></div>`;
+    const flat = seq.map(s => s.map(n => NN[n % 12]).join('+'));
+    $('#arpRead').textContent = flat.slice(0, 16).join(' ');
+  }
+  function draw() {
+    const W = cv.clientWidth, H = 260, dpr = devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const lo = 54, hi = 92, rowH = (H - 20) / (hi - lo), colW = (W - 40) / 16;
+    for (let m = lo; m <= hi; m++) { const y = H - 10 - (m - lo + 1) * rowH; ctx.fillStyle = [1, 3, 6, 8, 10].includes(m % 12) ? 'rgba(255,255,255,.025)' : 'rgba(255,255,255,.05)'; ctx.fillRect(30, y, W - 40, rowH - 1); if (m % 12 === 0) { ctx.fillStyle = '#a59cc6'; ctx.font = '10px JetBrains Mono, monospace'; ctx.fillText('C' + (m / 12 - 1), 2, y + rowH - 1); } }
+    for (let i = 0; i <= 16; i++) { ctx.fillStyle = i % 4 === 0 ? 'rgba(165,156,198,.35)' : 'rgba(165,156,198,.12)'; ctx.fillRect(30 + i * colW, 10, 1, H - 20); }
+    seq.forEach((notes, i) => notes.forEach(n => {
+      const x = 30 + i * colW + 2, y = H - 10 - (n - lo + 1) * rowH, on = i === head;
+      const g = ctx.createLinearGradient(x, 0, x + colW, 0); g.addColorStop(0, on ? '#ffd23d' : '#ff3df2'); g.addColorStop(1, on ? '#fff3b0' : '#39f3ff');
+      ctx.fillStyle = g; ctx.shadowColor = on ? '#ffd23d' : '#ff3df2'; ctx.shadowBlur = on ? 18 : 8;
+      ctx.fillRect(x, y, colW * .82, Math.max(rowH - 1, 3)); ctx.shadowBlur = 0;
+    }));
+    if (head >= 0) { ctx.fillStyle = 'rgba(255,210,61,.12)'; ctx.fillRect(30 + head * colW, 10, colW, H - 20); }
+  }
+  const names = ARP.map(a => a[0]);
+  chipRow($('#arpChips'), names, i => { dir = i; seq = arpSeq(i); describe(); draw(); });
+  function stop() { clearInterval(timer); timer = null; head = -1; $('#arpPlay').textContent = '▶ Play'; draw(); }
+  $('#arpPlay').addEventListener('click', () => {
+    if (timer) return stop();
+    ensure(); $('#arpPlay').textContent = '■ Stop'; head = -1;
+    timer = setInterval(() => { head = (head + 1) % 16; const v = head % 4 === 0 ? .9 : .6; seq[head].forEach(n => tone(n, 0, .22, v)); draw(); }, 125);
+  });
+  describe(); draw(); addEventListener('resize', draw);
+}
+
+/* ---------------- scales ---------------- */
+const SCALES = [['Chromatic', 0b111111111111], ['Major', 0b101010110101], ['Natural minor', 0b010110101101], ['Harmonic minor', 0b100110101101], ['Melodic minor', 0b101010101101], ['Major pentatonic', 0b001010010101], ['Minor pentatonic', 0b010010101001], ['Blues', 0b010011101001], ['Dorian', 0b011010101101], ['Phrygian', 0b010110101011], ['Lydian', 0b101011010101], ['Mixolydian', 0b011010110101], ['Locrian', 0b010101101011]];
+function initScales() {
+  const svg = $('#wheel'), NS = 'http://www.w3.org/2000/svg';
+  let mask = SCALES[2][1], cur = 2;
+  const nodes = [];
+  const poly = document.createElementNS(NS, 'polygon'); poly.setAttribute('fill', 'rgba(255,61,242,.16)'); poly.setAttribute('stroke', '#ff3df2'); poly.setAttribute('stroke-width', '1.5'); svg.appendChild(poly);
+  const circ = document.createElementNS(NS, 'circle'); circ.setAttribute('cx', 160); circ.setAttribute('cy', 160); circ.setAttribute('r', 120); circ.setAttribute('fill', 'none'); circ.setAttribute('stroke', '#2c2547'); svg.insertBefore(circ, poly);
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2 - Math.PI / 2, x = 160 + Math.cos(a) * 120, y = 160 + Math.sin(a) * 120;
+    const g = document.createElementNS(NS, 'g'); g.style.cursor = 'pointer'; g.setAttribute('tabindex', '0'); g.setAttribute('role', 'button'); g.setAttribute('aria-label', 'Play ' + NN[i]);
+    const c = document.createElementNS(NS, 'circle'); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 21);
+    const t = document.createElementNS(NS, 'text'); t.setAttribute('x', x); t.setAttribute('y', y + 5); t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-family', 'JetBrains Mono, monospace'); t.setAttribute('font-size', '13'); t.textContent = NN[i];
+    g.append(c, t); svg.appendChild(g);
+    const play = () => { ensure(); tone(60 + i, 0, .7, .7); c.setAttribute('r', 26); setTimeout(() => c.setAttribute('r', 21), 160); };
+    g.addEventListener('click', play); g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); } });
+    nodes.push({ c, t, x, y });
+  }
+  function render() {
+    const pts = [];
+    nodes.forEach((n, i) => {
+      const on = (mask >> i) & 1;
+      n.c.setAttribute('fill', on ? (i === 0 ? '#ffd23d' : '#ff3df2') : '#1a1530'); n.c.setAttribute('stroke', on ? '#fff' : '#2c2547');
+      n.t.setAttribute('fill', on ? '#0a0612' : '#a59cc6');
+      if (on) pts.push(n.x + ',' + n.y);
+    });
+    poly.setAttribute('points', pts.join(' '));
+    const steps = []; let last = 0; for (let i = 1; i <= 12; i++) if (i === 12 || ((mask >> i) & 1)) { steps.push(i - last); last = i; }
+    const count = steps.length;
+    $('#scaleRead').innerHTML = `<em>${SCALES[cur][0]}</em> on C · ${count} notes · steps ${steps.map(s => s === 1 ? 'H' : s === 2 ? 'W' : s === 3 ? 'W+H' : s).join(' ')}`;
+  }
+  chipRow($('#scaleChips'), SCALES.map(s => s[0]), i => { cur = i; mask = SCALES[i][1]; render(); }, 2);
+  $('#scaleRun').addEventListener('click', () => { ensure(); let k = 0; for (let i = 0; i <= 12; i++) if (i === 12 || ((mask >> i) & 1)) { tone(60 + i, k * .14, .3, .7); k++; } });
+  render();
+}
+
+/* ---------------- sequencer ---------------- */
+function initSeq() {
+  const cv = $('#seqCv'), ctx = cv.getContext('2d');
+  const lanes = [
+    { name: 'KICK', kind: 'kick', len: 16, steps: [1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0], cond: {} },
+    { name: 'SNARE', kind: 'snare', len: 16, steps: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1], cond: { 15: 'FILL' } },
+    { name: 'HAT', kind: 'hat', len: 12, steps: [1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0], cond: { 3: '1:2' } },
+    { name: 'CLAP', kind: 'clap', len: 7, steps: [0, 0, 1, 0, 0, 1, 0], cond: { 5: 'PREV' } }
+  ];
+  let seed = 3, backup = null, alt = null, timer = null, tick = -1, cycle = 0;
+  const H = 230, padL = 54;
+  function geom() { const W = cv.clientWidth; return { W, cw: (W - padL - 8) / 16, rh: (H - 14) / lanes.length }; }
+  function draw() {
+    const { W, cw, rh } = geom(), dpr = devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    lanes.forEach((L, li) => {
+      const y = 7 + li * rh;
+      ctx.fillStyle = '#a59cc6'; ctx.font = '10px JetBrains Mono, monospace'; ctx.fillText(L.name, 4, y + rh / 2 - 2); ctx.fillText('len ' + L.len, 4, y + rh / 2 + 11);
+      const pos = tick >= 0 ? tick % L.len : -1;
+      for (let s = 0; s < 16; s++) {
+        const x = padL + s * cw, inLen = s < L.len, on = inLen && L.steps[s];
+        ctx.fillStyle = !inLen ? 'rgba(255,255,255,.015)' : on ? (s === pos ? '#ffd23d' : li % 2 ? '#39f3ff' : '#ff3df2') : (s === pos ? 'rgba(255,210,61,.25)' : (s % 4 === 0 ? '#221b3a' : '#1a1530'));
+        if (on) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = s === pos ? 20 : 8; }
+        ctx.fillRect(x + 2, y + 3, cw - 4, rh - 6); ctx.shadowBlur = 0;
+        const c = L.cond[s];
+        if (c && inLen) { ctx.fillStyle = on ? '#0a0612' : '#a59cc6'; ctx.font = '600 9px JetBrains Mono, monospace'; ctx.fillText(c, x + 4, y + rh - 9); }
+      }
+    });
+    const genome = lanes.map(L => L.name[0] + ':' + L.steps.slice(0, L.len).map(v => v ? 'x' : '.').join('')).join('  ');
+    $('#seqRead').innerHTML = `seed <em>${seed}</em> · ${alt ? 'B (mutated)' : 'A'} · ${genome}`;
+  }
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), { cw, rh } = geom();
+    const s = Math.floor((e.clientX - r.left - padL) / cw), li = Math.floor((e.clientY - r.top - 7) / rh);
+    if (s >= 0 && s < 16 && li >= 0 && li < lanes.length && s < lanes[li].len) { lanes[li].steps[s] ^= 1; if (lanes[li].steps[s]) { ensure(); drum(lanes[li].kind); } draw(); }
+  });
+  const snap = () => lanes.map(L => [...L.steps]);
+  $('#seqMut').addEventListener('click', () => {
+    backup = snap(); const r = mulberry(seed++);
+    lanes.forEach(L => { for (let s = 0; s < L.len; s++) if (s !== 0 && r() < .22) L.steps[s] = r() < .55 ? 1 : 0; });
+    alt = snap(); draw();
+  });
+  let showingB = true;
+  $('#seqAB').addEventListener('click', () => {
+    if (!backup) return; showingB = !showingB; const src = showingB ? alt : backup;
+    lanes.forEach((L, i) => L.steps = [...src[i]]); alt = showingB ? alt : alt; draw();
+    $('#seqRead').innerHTML = $('#seqRead').innerHTML.replace(/· (A|B \(mutated\)) ·/, showingB ? '· B (mutated) ·' : '· A ·');
+  });
+  function stop() { clearInterval(timer); timer = null; tick = -1; $('#seqPlay').textContent = '▶ Play'; draw(); }
+  $('#seqPlay').addEventListener('click', () => {
+    if (timer) return stop();
+    ensure(); $('#seqPlay').textContent = '■ Stop'; tick = -1; cycle = 0;
+    let prevHit = false;
+    timer = setInterval(() => {
+      tick++; if (tick % 16 === 0) cycle++;
+      lanes.forEach(L => {
+        const s = tick % L.len, c = L.cond[s]; if (!L.steps[s]) return;
+        const lc = Math.floor(tick / L.len);
+        let play = true;
+        if (c === '1:2') play = lc % 2 === 0;
+        if (c === 'FILL') play = cycle % 4 === 0;
+        if (c === 'PREV') play = prevHit;
+        if (L.kind === 'clap') prevHit = play;
+        if (play) drum(L.kind, 0, s % 4 === 0 ? 1 : .75);
+      });
+      draw();
+    }, 140);
+  });
+  draw(); addEventListener('resize', draw);
+}
+
+/* ---------------- jog chop ---------------- */
+function initChop() {
+  const SR = 48000, LEN = SR * 2;
+  const r = mulberry(5), wave = new Float32Array(LEN);
+  const hits = [0, 0.25, 0.5, 0.625, 0.75, 1.0, 1.25, 1.375, 1.5, 1.75].map(s => Math.round(s * SR) + 900);
+  hits.forEach((h, k) => { const kick = k % 4 === 0; for (let i = 0; i < SR * .22 && h + i < LEN; i++) { const env = Math.exp(-i / (kick ? 4200 : 1500)); wave[h + i] += env * (kick ? Math.sin(i / SR * Math.PI * 2 * (60 + 90 * Math.exp(-i / 900))) : (r() * 2 - 1) * .8); } });
+  for (let i = 0; i < LEN; i++) wave[i] += (r() * 2 - 1) * .015;
+  let marks = [...hits], sel = 3;
+  const stepNames = ['1 sample', '0.1 ms', '1 ms', '10 ms', 'follow zoom'], stepVals = [1, 4.8, 48, 480, LEN / 4000];
+  let stepI = 0, focus = marks[sel], lastMoved = 'start', auditionT = null;
+  chipRow($('#jogStep'), stepNames, i => { stepI = i; draw(); });
+  const cv = $('#chopCv'), zc = $('#zoomCv'), c1 = cv.getContext('2d'), c2 = zc.getContext('2d');
+  function drawWave(ctx, cvs, H, from, to, isZoom) {
+    const W = cvs.clientWidth, dpr = devicePixelRatio || 1;
+    if (cvs.width !== Math.round(W * dpr)) { cvs.width = Math.round(W * dpr); cvs.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const span = to - from, X = s => (s - from) / span * W;
+    // selected slice tint
+    const s0 = marks[sel], s1 = sel + 1 < marks.length ? marks[sel + 1] : LEN;
+    ctx.fillStyle = 'rgba(255,61,242,.12)'; ctx.fillRect(X(s0), 0, X(s1) - X(s0), H);
+    const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#39f3ff'); g.addColorStop(1, '#ff3df2');
+    ctx.strokeStyle = g; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const a = Math.floor(from + x / W * span), b = Math.max(a + 1, Math.floor(from + (x + 1) / W * span));
+      let mn = 1, mx = -1; for (let i = Math.max(0, a); i < Math.min(LEN, b); i++) { const v = wave[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+      if (mn > mx) continue;
+      ctx.moveTo(x + .5, H / 2 - mx * H * .45); ctx.lineTo(x + .5, H / 2 - mn * H * .45 + 1);
+    }
+    ctx.stroke();
+    marks.forEach((m, i) => { if (m < from || m > to) return; const x = X(m); ctx.fillStyle = i === sel ? '#39f3ff' : i === sel + 1 ? '#ff3df2' : 'rgba(239,234,255,.45)'; ctx.fillRect(x, 0, isZoom ? 2 : 1.5, H); });
+    if (isZoom) { ctx.fillStyle = '#a59cc6'; ctx.font = '10px JetBrains Mono, monospace'; ctx.fillText('ZOOM ±' + Math.round(span / 2) + ' samples', 6, 12); }
+  }
+  function draw() {
+    drawWave(c1, cv, 150, 0, LEN, false);
+    const half = 600; drawWave(c2, zc, 110, focus - half, focus + half, true);
+    const s0 = marks[sel], s1 = sel + 1 < marks.length ? marks[sel + 1] : LEN;
+    $('#chopRead').innerHTML = `slice <em>${sel + 1}</em> / ${marks.length} · start <em>${s0}</em> · end <em>${s1}</em> · ${((s1 - s0) / SR * 1000).toFixed(2)} ms · step ${stepNames[stepI]}`;
+  }
+  function move(which, clicks) {
+    const step = Math.max(1, Math.round(stepVals[stepI])) * clicks;
+    if (which === 'start') {
+      if (sel === 0 && marks[0] + step > 64 && clicks > 0 && marks[0] === hits[0]) {}
+      const lo = sel > 0 ? marks[sel - 1] + 64 : 0, hi = (sel + 1 < marks.length ? marks[sel + 1] : LEN) - 64;
+      marks[sel] = Math.min(hi, Math.max(lo, marks[sel] + step)); focus = marks[sel];
+    } else {
+      if (sel + 1 >= marks.length) { marks.push(LEN - 64); }
+      const i = sel + 1, lo = marks[sel] + 64, hi = (i + 1 < marks.length ? marks[i + 1] : LEN) - 64;
+      marks[i] = Math.min(hi, Math.max(lo, marks[i] + step)); focus = marks[i];
+    }
+    draw();
+    clearTimeout(auditionT); auditionT = setTimeout(() => { if (soundOn) drum(sel % 4 === 0 ? 'kick' : 'snare', 0, .8); }, 180);
+  }
+  function knob(el, which) {
+    let rot = 0, y0 = null, acc = 0;
+    const turn = d => { rot += d * 9; el.style.setProperty('--r', rot + 'deg'); move(which, d); };
+    el.addEventListener('pointerdown', e => { y0 = e.clientY; acc = 0; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => { if (y0 === null) return; acc += (y0 - e.clientY); y0 = e.clientY; while (Math.abs(acc) >= 6) { const d = Math.sign(acc); acc -= d * 6; turn(d); } });
+    el.addEventListener('pointerup', () => { y0 = null; });
+    el.addEventListener('wheel', e => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    el.addEventListener('keydown', e => { if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); turn(1); } if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); turn(-1); } });
+  }
+  knob($('#kStart'), 'start'); knob($('#kEnd'), 'end');
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), s = (e.clientX - r.left) / r.width * LEN;
+    let i = 0; for (let k = 0; k < marks.length; k++) if (marks[k] <= s) i = k;
+    sel = i; focus = marks[sel]; draw(); if (soundOn) drum(sel % 4 === 0 ? 'kick' : 'snare', 0, .8); else ensure();
+  });
+  draw(); addEventListener('resize', draw);
+}
+
+/* ---------------- note repeat XY ---------------- */
+function initXY() {
+  const pad = $('#xy'), cv = $('#xyCv'), ctx = cv.getContext('2d');
+  const RATES = [['1 bar', 4], ['1/2', 2], ['1/2T', 4 / 3], ['1/4', 1], ['1/4T', 2 / 3], ['1/8', .5], ['1/8T', 1 / 3], ['1/16', .25], ['1/16T', 1 / 6], ['1/32', .125], ['1/32T', 1 / 12], ['1/64', .0625], ['1/64T', 1 / 24], ['1/128', .03125]];
+  let held = false, x = .5, y = .5, nextT = 0, raf = null, rings = [];
+  const BPM = 120;
+  function state() { const ri = Math.min(13, Math.floor(x * 14)); const gate = Math.max(.01, y); return { ri, gate }; }
+  function sched() {
+    if (!held) return;
+    const { ri, gate } = state(), beat = 60 / BPM * RATES[ri][1];
+    if (ac) { while (nextT < ac.currentTime + .08) { const when = Math.max(0, nextT - ac.currentTime); drum(ri < 7 ? 'kick' : 'hat', when, .9, gate); if (ri >= 7) drum('snare', when, .35, gate); rings.push({ t: performance.now() + when * 1000, x, y }); nextT += beat; } }
+    $('#xyRead').innerHTML = `rate <em>${RATES[ri][0]}</em> · gate <em>${Math.round(gate * 100)}%</em> · ${(beat * 48000).toFixed(0)} samples between hits at 120 BPM / 48 kHz`;
+    setTimeout(sched, 25);
+  }
+  function anim() {
+    const W = pad.clientWidth, H = pad.clientHeight, dpr = devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    for (let i = 1; i < 14; i++) { ctx.fillStyle = 'rgba(165,156,198,.08)'; ctx.fillRect(i / 14 * W, 0, 1, H); }
+    const now = performance.now();
+    rings = rings.filter(r => now - r.t < 700);
+    rings.forEach(r => { const age = (now - r.t) / 700; if (age < 0) return; ctx.strokeStyle = `rgba(255,61,242,${1 - age})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(r.x * W, (1 - r.y) * H, 8 + age * 70, 0, Math.PI * 2); ctx.stroke(); });
+    if (held) { const g = ctx.createRadialGradient(x * W, (1 - y) * H, 0, x * W, (1 - y) * H, 40); g.addColorStop(0, 'rgba(57,243,255,.9)'); g.addColorStop(1, 'rgba(57,243,255,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x * W, (1 - y) * H, 40, 0, Math.PI * 2); ctx.fill(); }
+    if (held || rings.length) raf = requestAnimationFrame(anim); else raf = null;
+  }
+  const setXY = e => { const r = pad.getBoundingClientRect(); x = Math.min(.999, Math.max(0, (e.clientX - r.left) / r.width)); y = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height)); };
+  pad.addEventListener('pointerdown', e => { ensure(); setXY(e); held = true; pad.setPointerCapture(e.pointerId); nextT = ac ? ac.currentTime + .01 : 0; sched(); if (!raf) raf = requestAnimationFrame(anim); });
+  pad.addEventListener('pointermove', e => { if (held) setXY(e); });
+  const up = () => { held = false; };
+  pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
+  anim();
+}
+
+/* ---------------- tilt + glow ---------------- */
+function initFx() {
+  const glow = $('#glow');
+  if (!RM) addEventListener('pointermove', e => { glow.style.left = e.clientX + 'px'; glow.style.top = e.clientY + 'px'; }, { passive: true });
+  else glow.hidden = true;
+  if (RM) return;
+  document.querySelectorAll('.tilt').forEach(el => {
+    el.addEventListener('pointermove', e => { const r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - .5, py = (e.clientY - r.top) / r.height - .5; el.style.transform = `rotateY(${px * 12}deg) rotateX(${-py * 12}deg) translateZ(10px)`; el.style.boxShadow = `${-px * 20}px ${-py * 20}px 40px rgba(255,61,242,.18)`; });
+    el.addEventListener('pointerleave', () => { el.style.transform = ''; el.style.boxShadow = ''; });
+  });
+}
+
+initHero(); initOrbit(); initChordLab(); initBrain(); initArp(); initScales(); initSeq(); initChop(); initXY(); initFx();
+})();
+</script>
+</body>
+</html>
